@@ -1,0 +1,17 @@
+{
+  "name": "elegant-maxwell",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.6.63 preview",
+    "check": "npx --yes hyperframes@0.6.63 lint && npx --yes hyperframes@0.6.63 validate && npx --yes hyperframes@0.6.63 inspect",
+    "render": "npx --yes hyperframes@0.6.63 render",
+    "publish": "npx --yes hyperframes@0.6.63 publish"
+  },
+  "dependencies": {
+    "@imgly/background-removal-node": "^1.4.5",
+    "googleapis": "^173.0.0",
+    "open": "^11.0.0",
+    "puppeteer": "^25.1.0"
+  }
+}

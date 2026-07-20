@@ -1,0 +1,21 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+
+# Render outputs and temp frames
+output/
+temp_ai_reel/
+temp_debug_frames/
+ref_frames/
+scratch/
+_gemini_cache.json
+
+# Secrets & tokens
+.env
+*.json.secret
+client_secret.json
+youtube_token.json
+
+# Remotion build output
+remotion_engine/node_modules/
+remotion_engine/.remotion/
