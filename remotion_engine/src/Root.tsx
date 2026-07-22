@@ -1,14 +1,15 @@
+import React from "react";
 import { Composition } from "remotion";
-import { Scene } from "./Scene";
+import { SceneDraftReel05 } from "./SceneDraftReel05";
 
 export const RemotionRoot: React.FC = () => {
   return (
     <>
       <Composition
-        id="Scene"
-        component={Scene}
+        id="SceneDraftReel05"
+        component={SceneDraftReel05}
         fps={30}
-        durationInFrames={315} // 10.5 seconds * 30 fps = 315 frames
+        durationInFrames={450} // 15 seconds * 30 fps = 450 frames
         width={1080}
         height={1920}
       />

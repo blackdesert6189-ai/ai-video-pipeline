@@ -5,8 +5,26 @@ import { ThreeCanvas } from "@remotion/three";
 import { getPhoneLayout } from "./helpers/layout";
 import { Phone } from "./Phone";
 
-// Đọc tham số phiên bản A/B/C từ Input Props
-const { version = "C" } = getInputProps() as { version?: "A" | "B" | "C" };
+// Đọc tham số phiên bản và dữ liệu kịch bản kinh doanh từ Input Props
+const {
+  version = "C",
+  hook = "Bát phở bò bạn ăn trưa nay chứa bao nhiêu calo thực tế?",
+  subtitles = "Bát phở bò bao nhiêu calo? / Quét macros bằng camera / Giải pháp thông minh từ CNFI",
+  cta = "QUÉT BỮA ĂN VỚI AI HEALTH",
+  climaxText: propClimax = "BÁT PHỞ BÒ ~ 650 KCAL",
+  voiceover = "",
+  broll1 = "broll_pork.mp4",
+  broll2 = "broll_pasta.mp4"
+} = getInputProps() as {
+  version?: "A" | "B" | "C";
+  hook?: string;
+  subtitles?: string;
+  cta?: string;
+  climaxText?: string;
+  voiceover?: string;
+  broll1?: string;
+  broll2?: string;
+};
 
 // Component phụ đề Kinetic Typography
 const KineticSubtitle: React.FC<{ text: string; frame: number; duration: number }> = ({ text, frame, duration }) => {
@@ -153,48 +171,43 @@ export const Scene: React.FC = () => {
   }, [frame]);
 
   const climaxText = useMemo(() => {
-    if (version === "B") return "🔥 CHỈ 542 CALO!";
-    return "CHỈ 542 CALO!";
+    return propClimax || "BÁT PHỞ BÒ ~ 650 KCAL";
   }, []);
 
   const ctaButtonText = useMemo(() => {
-    if (version === "A") return "TẢI CNFI HEALTH";
-    if (version === "B") return "👉 QUÉT THỬ MÓN BẠN VỪA ĂN!";
-    return "QUÉT THỬ BỮA ĂN CỦA BẠN";
+    return cta || "QUÉT BỮA ĂN VỚI AI HEALTH";
+  }, []);
+
+  // Split subtitles by '/' or '.' into frames
+  const subList = useMemo(() => {
+    if (!subtitles) return ["Bát phở bò bao nhiêu calo?", "Quét macros bằng camera", "Giải pháp thông minh từ CNFI"];
+    return subtitles.split(/[/|.]/).map(s => s.trim()).filter(Boolean);
   }, []);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       
-      {/* 
-        Sử dụng CSS filter: blur trực tiếp trên duy nhất 1 video B-roll đang phát để chuyển tiếp.
-        Điều này triệt tiêu hoàn toàn lỗi chớp đen phát sinh do việc nạp tệp video khác (src swap).
-      */}
       <Video
-        src={staticFile("broll_pork.mp4")}
+        src={staticFile(broll1)}
         style={{
           position: "absolute",
           width: "100%",
           height: "100%",
           objectFit: "cover",
-          // Blur fade-in mượt 6 frames (42→48) thay vì hard-cut tại frame 45
           filter: `blur(${interpolate(frame, [42, 48], [0, 20], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })}px)`,
-          // Crossfade opacity sang broll_pasta mượt 8 frames (131→139)
           opacity: interpolate(frame, [131, 139], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }),
         }}
         muted
         volume={0}
       />
       <Video
-        src={staticFile("broll_pasta.mp4")}
+        src={staticFile(broll2)}
         style={{
           position: "absolute",
           width: "100%",
           height: "100%",
           objectFit: "cover",
-          // Blur fade-out mượt 6 frames (237→243) thay vì hard-cut tại frame 240
           filter: `blur(${interpolate(frame, [237, 243], [20, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })}px)`,
-          // Crossfade opacity từ broll_pork mượt 8 frames (131→139)
           opacity: interpolate(frame, [131, 139], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }),
         }}
         delayInFrames={131}
@@ -203,17 +216,33 @@ export const Scene: React.FC = () => {
       />
 
       {/* Hook Sticker Overlay */}
-      {frame < 45 && hookSticker && (
+      {frame < 45 && (
         <div style={{
           position: "absolute",
-          top: "40%",
+          top: "35%",
           width: "100%",
           display: "flex",
           justifyContent: "center",
           zIndex: 90,
           fontFamily: "'Be Vietnam Pro', sans-serif"
         }}>
-          {hookSticker}
+          <div style={{
+            background: "#ffffff",
+            color: "#000000",
+            fontSize: "44px",
+            fontWeight: 900,
+            padding: "18px 36px",
+            borderRadius: "20px",
+            boxShadow: "0 20px 50px rgba(0, 0, 0, 0.4)",
+            border: "3px solid #000000",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            textAlign: "center",
+            maxWidth: "900px",
+            transform: `rotate(-2deg) scale(${interpolate(frame, [0, 15, 30, 45], [0.95, 1.05, 0.95, 1.0], { extrapolateRight: "clamp" })})`
+          }}>
+            {hook || "BÁT PHỞ BÒ BAO NHIÊU CALO?"}
+          </div>
         </div>
       )}
 
@@ -243,18 +272,14 @@ export const Scene: React.FC = () => {
           fontFamily: "'Be Vietnam Pro', sans-serif"
         }}>
           <div style={{
-            background: version === "B" 
-              ? "linear-gradient(135deg, #ef4444, #b91c1c)" 
-              : "linear-gradient(135deg, #1f2937, #111827)",
+            background: "linear-gradient(135deg, #1f2937, #111827)",
             color: "#ffffff",
             fontSize: "48px",
             fontWeight: 900,
             padding: "24px 50px",
             borderRadius: "20px",
-            boxShadow: version === "B"
-              ? "0 20px 50px rgba(239, 68, 68, 0.4)"
-              : "0 20px 50px rgba(0, 0, 0, 0.5)",
-            border: "4px solid #ffffff",
+            boxShadow: "0 20px 50px rgba(0, 0, 0, 0.5)",
+            border: "4px solid #a6ff3d",
             textTransform: "uppercase",
             letterSpacing: "1px"
           }}>
@@ -272,26 +297,26 @@ export const Scene: React.FC = () => {
           flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
-          background: "rgba(0, 0, 0, 0.55)",
+          background: "rgba(0, 0, 0, 0.65)",
           zIndex: 80,
-          transform: `scale(${ctaScale})`
+          transform: `scale(${ctaScale})`,
+          padding: "40px",
+          textAlign: "center"
         }}>
           <button style={{
-            background: version === "A"
-              ? "linear-gradient(135deg, #ffffff, #e5e7eb)"
-              : "linear-gradient(135deg, #a6ff3d, #80d91a)",
+            background: "linear-gradient(135deg, #a6ff3d, #80d91a)",
             color: "#050505",
-            fontSize: "52px",
+            fontSize: "44px",
             fontWeight: 900,
-            padding: "36px 80px",
+            padding: "30px 60px",
             borderRadius: "60px",
-            boxShadow: version === "A"
-              ? "0 20px 60px rgba(255, 255, 255, 0.25)"
-              : "0 20px 60px rgba(166, 255, 61, 0.6)",
+            boxShadow: "0 20px 60px rgba(166, 255, 61, 0.6)",
             border: "none",
             textTransform: "uppercase",
             letterSpacing: "1px",
-            fontFamily: "'Be Vietnam Pro', sans-serif"
+            fontFamily: "'Be Vietnam Pro', sans-serif",
+            maxWidth: "900px",
+            lineHeight: "1.3"
           }}>
             {ctaButtonText}
           </button>
@@ -303,11 +328,11 @@ export const Scene: React.FC = () => {
         <img src={staticFile("logo.png")} style={{ width: "120px", height: "auto" }} />
       </div>
 
-      {/* 6. Phụ đề động Kinetic Subtitles */}
-      {frame < 45 && <KineticSubtitle text="Bữa cơm nhà thế này bao nhiêu calo?" frame={frame} duration={45} />}
-      {frame >= 45 && frame < 135 && <KineticSubtitle text="Chụp 2 góc bằng AI!" frame={frame - 45} duration={90} />}
-      {frame >= 135 && frame < 240 && <KineticSubtitle text="Bóc tách từng món chính xác!" frame={frame - 135} duration={105} />}
-      {frame >= 240 && <KineticSubtitle text="Quét calo thử ngay!" frame={frame - 240} duration={75} />}
+      {/* 6. Phụ đề động Kinetic Subtitles - Nạp từ subList kịch bản */}
+      {frame < 45 && <KineticSubtitle text={subList[0] || hook} frame={frame} duration={45} />}
+      {frame >= 45 && frame < 135 && <KineticSubtitle text={subList[1] || "Quét macros bằng camera"} frame={frame - 45} duration={90} />}
+      {frame >= 135 && frame < 240 && <KineticSubtitle text={subList[2] || "Bóc tách dinh dưỡng chuẩn xác"} frame={frame - 135} duration={105} />}
+      {frame >= 240 && <KineticSubtitle text={subList[3] || ctaButtonText} frame={frame - 240} duration={75} />}
 
       {/* 7. Nhạc nền và SFX */}
       <Audio src={staticFile("music.mp3")} volume={0.12} loop />
