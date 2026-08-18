@@ -58,7 +58,7 @@ export function loadOwnedCache(videoPath, srtPath) {
 }
 
 export function saveOwnedCache({ videoPath, srtPath, sentences, overlays, totalDuration, hook, broll_schedule }) {
-  const srtDir = srtPath ? path.dirname(path.resolve(srtPath)) : (videoPath ? path.dirname(path.resolve(videoPath)) : '.');
+  const srtDir = srtPath ? path.dirname(srtPath) : (videoPath ? path.dirname(videoPath) : '.');
   const videoBaseName = path.basename(videoPath, path.extname(videoPath));
 
   const cachePayload = {

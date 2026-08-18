@@ -8,9 +8,7 @@ export function timeToSeconds(hrs, mins, secs, ms) {
 }
 
 export function parseSRT(srtContent) {
-  if (!srtContent || typeof srtContent !== 'string') return [];
   const normalized = srtContent.replace(/\r\n/g, '\n').trim();
-  if (!normalized) return [];
 
   const blocks = normalized.split(/\n\s*\n/);
   const cues = [];

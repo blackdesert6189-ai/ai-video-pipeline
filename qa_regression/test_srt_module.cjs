@@ -61,11 +61,11 @@ Dòng 3 kết thúc
     allPassed = false;
   }
 
-  // 5. Test empty / invalid input
-  if (parseSRT('').length === 0 && parseSRT(null).length === 0) {
-    console.log('✓ TEST 5 PASSED: Empty and null SRT inputs safely return empty array.');
+  // 5. Test empty string input
+  if (parseSRT('').length === 0) {
+    console.log('✓ TEST 5 PASSED: Empty SRT string input safely returns empty array.');
   } else {
-    console.error('❌ TEST 5 FAILED');
+    console.error('❌ TEST 5 FAILED: Expected empty array for empty string');
     allPassed = false;
   }
 

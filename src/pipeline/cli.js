@@ -46,20 +46,9 @@ export function parseArgs(rawArgs = process.argv.slice(2)) {
 
   // Fallback to positional arguments (single-video mode only)
   if (!batchDir) {
-    const positionals = [];
-    for (let i = 0; i < rawArgs.length; i++) {
-      const token = rawArgs[i];
-      if (token.startsWith('--')) {
-        if (knownValuedFlags.has(token)) {
-          i++; // skip parameter value
-        }
-      } else {
-        positionals.push(token);
-      }
-    }
-    if (!srtPath && positionals[0]) srtPath = positionals[0];
-    if (!videoPath && positionals[1]) videoPath = positionals[1];
-    if (!outputPath && positionals[2]) outputPath = positionals[2];
+    if (!srtPath    && rawArgs[0]) srtPath    = rawArgs[0];
+    if (!videoPath  && rawArgs[1]) videoPath  = rawArgs[1];
+    if (!outputPath && rawArgs[2]) outputPath = rawArgs[2];
   }
 
   return {
