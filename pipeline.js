@@ -7158,6 +7158,19 @@ async function runBatch(bDir, oDir, baseOpts = {}) {
 // Entry point — batch vs single
 const cliOptions = parseArgs(process.argv.slice(2));
 
+// Top-level CLI validation (executed before batch dispatch in baseline main)
+if (cliOptions.reportOnly) {
+  if (!cliOptions.srtPath) {
+    logError("--report mode requires --srt <srt_path>");
+    console.log(`\nUsage:\n  node pipeline.js --srt <srt_path> --report`);
+    process.exit(1);
+  }
+} else if (!cliOptions.videoPath || !cliOptions.outputPath || (!cliOptions.skipGemini && !cliOptions.srtPath)) {
+  logError("Missing required arguments!");
+  console.log(`\nUsage:\n  node pipeline.js --srt <srt_path> --video <video_path> --output <output_path> [--skip-gemini]`);
+  process.exit(1);
+}
+
 if (cliOptions.batchDir) {
   const finalOutputDir = cliOptions.outputDir || path.join(cliOptions.batchDir, "output");
   runBatch(cliOptions.batchDir, finalOutputDir, cliOptions).catch(e => { console.error(e); process.exit(1); });
