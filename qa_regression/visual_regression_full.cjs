@@ -23,7 +23,7 @@ const tests = [
 ];
 
 console.log('==================================================================');
-console.log('    FAIL-CLOSED VISUAL REGRESSION SUITE (PSNR & SSIM ASSERTED)');
+console.log('  ISOLATED AUDIO REMASTER VISUAL-PRESERVATION TEST (-c:v copy)');
 console.log('==================================================================\n');
 
 let allPassed = true;
