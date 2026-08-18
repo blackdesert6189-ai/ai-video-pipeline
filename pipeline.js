@@ -1045,6 +1045,132 @@ function hasAudioStream(filePath) {
   }
 }
 
+function buildVoiceProcessingChain() {
+  return [
+    `highpass=f=${AUDIO_HIGHPASS_HZ}`,
+    `agate=threshold=${AUDIO_GATE_THRESHOLD}:attack=${AUDIO_GATE_ATTACK_MS}:release=${AUDIO_GATE_RELEASE_MS}:knee=2.828`,
+    `afftdn=nf=${AUDIO_DENOISE_FLOOR}`,
+    `equalizer=f=${AUDIO_EQ_MUD_HZ}:width_type=o:width=2:g=${AUDIO_EQ_MUD_GAIN}`,
+    `equalizer=f=${AUDIO_EQ_DESS_HZ}:width_type=o:width=1.5:g=${AUDIO_EQ_DESS_GAIN}`,
+    `equalizer=f=${AUDIO_EQ_PRESENCE_HZ}:width_type=o:width=2:g=${AUDIO_EQ_PRESENCE_GAIN}`,
+    `equalizer=f=${AUDIO_EQ_AIR_HZ}:width_type=o:width=2:g=${AUDIO_EQ_AIR_GAIN}`,
+    `acompressor=threshold=${AUDIO_COMP_THRESHOLD}dB:ratio=${AUDIO_COMP_RATIO}:attack=${AUDIO_COMP_ATTACK_MS}:release=${AUDIO_COMP_RELEASE_MS}:makeup=4`
+  ].join(',');
+}
+
+function buildAudioPlan(sfxOverlayEvents, brollSegments) {
+  const plan = [];
+
+  // 1. Hook SFX at t=0 (reuses existing scoring/selection)
+  const sfxFiles = discoverSfxFiles();
+  const preferred = ['whoosh', 'cinematic', 'impact'];
+  const hookFile = sfxFiles
+    .map(f => {
+      const score = preferred.findIndex(cat => f.categories.includes(cat));
+      return { f, score: score === -1 ? 999 : score };
+    })
+    .sort((a, b) => a.score - b.score)[0]?.f;
+
+  if (hookFile && fs.existsSync(hookFile.filePath)) {
+    plan.push({
+      type: 'HOOK',
+      fileName: hookFile.fileName,
+      filePath: hookFile.filePath,
+      delayMs: 0,
+      vol: HOOK_SFX_VOLUME_DB
+    });
+  }
+
+  // 2. Card SFX (reuses existing pool rotation/selection)
+  const seen = new Set();
+  const sfxPool = buildSfxPoolByCardType();
+  const typeCounter = {};
+
+  for (const event of sfxOverlayEvents || []) {
+    const type = String(event.type ?? "").trim().toUpperCase();
+    const pool = sfxPool[type];
+    if (!pool?.length) continue;
+
+    const idx = typeCounter[type] ?? 0;
+    const filePath = pool[idx % pool.length];
+    typeCounter[type] = idx + 1;
+
+    if (!fs.existsSync(filePath)) continue;
+
+    const startTime = toSeconds(event.startTime ?? event.start_ms, 0);
+    const key = `${type}|${Math.round(startTime * 100)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    plan.push({
+      type: `CARD_${type}`,
+      fileName: path.basename(filePath),
+      filePath,
+      delayMs: Math.max(0, Math.round(startTime * 1000)),
+      vol: SFX_VOLUME_DB
+    });
+  }
+
+  // 3. B-roll SFX (reuses existing pool selection)
+  if (brollSegments?.length && sfxFiles.length) {
+    const brollPool = sfxFiles
+      .map(f => ({ f, score: ['whoosh', 'transition'].findIndex(c => f.categories.includes(c)) }))
+      .filter(x => x.score >= 0)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 3)
+      .map(x => x.f);
+
+    if (brollPool.length) {
+      let bi = 0;
+      for (const seg of brollSegments) {
+        const t = toSeconds(seg.startTime, 0);
+        const f = brollPool[bi % brollPool.length]; bi++;
+        plan.push({
+          type: 'BROLL',
+          fileName: f.fileName,
+          filePath: f.filePath,
+          delayMs: Math.round(t * 1000),
+          vol: BROLL_SFX_VOLUME_DB
+        });
+      }
+    }
+  }
+
+  return plan;
+}
+
+function measureMixedAudioLoudnorm(videoPath, audioPlan) {
+  const voiceChain = buildVoiceProcessingChain();
+  const sfxInputs = audioPlan.map(e => `-i "${e.filePath}"`).join(' ');
+  const sfxFilters = audioPlan.map((e, idx) => {
+    const inputIdx = idx + 1;
+    return `[${inputIdx}:a]volume=${e.vol}dB,adelay=${e.delayMs}|${e.delayMs}[sfx${idx}]`;
+  });
+
+  let mixFilter;
+  if (audioPlan.length > 0) {
+    const mixInputs = ['[vproc]', ...audioPlan.map((_, idx) => `[sfx${idx}]`)].join('');
+    mixFilter = `${sfxFilters.join(';')};${mixInputs}amix=inputs=${audioPlan.length + 1}:duration=first:dropout_transition=0:normalize=0[mixed_audio]`;
+  } else {
+    mixFilter = `[vproc]anull[mixed_audio]`;
+  }
+
+  const filterComplex = `[0:a]${voiceChain}[vproc];${mixFilter};[mixed_audio]loudnorm=I=${AUDIO_LUFS_TARGET}:TP=-1.5:LRA=${AUDIO_LRA}:print_format=json`;
+  const cmd = `ffmpeg -i "${videoPath}" ${sfxInputs} -vn -filter_complex "${filterComplex}" -f null - 2>&1`;
+
+  try {
+    const raw = execSync(cmd, { encoding: 'utf8' });
+    const match = raw.match(/\{[\s\S]*?"input_i"[\s\S]*?\}/);
+    if (!match) return null;
+    return JSON.parse(match[0]);
+  } catch (e) {
+    const out = String(e.stdout || '') + String(e.stderr || '');
+    const match = out.match(/\{[\s\S]*?"input_i"[\s\S]*?\}/);
+    if (!match) return null;
+    try { return JSON.parse(match[0]); } catch { return null; }
+  }
+}
+
 function mixOverlaySfxIntoOutput(finalOutputPath, overlayEvents) {
   const validEvents = [];
   const seen = new Set();
@@ -6605,10 +6731,44 @@ async function runPipeline(opts = {}) {
     console.log(`Video Path:  ${videoPath}`);
     console.log(`Output Path: ${outputPath}`);
 
+    if (!fs.existsSync(videoPath)) {
+      throw new Error(`CRITICAL: Input video file not found at: ${videoPath}`);
+    }
+    if (!hasAudioStream(videoPath)) {
+      throw new Error(`CRITICAL FAIL-CLOSED: Input video "${videoPath}" has no audio stream. Aborting pipeline.`);
+    }
+
     if (skipGemini) {
-      const cacheFilePath = path.resolve('_gemini_cache.json');
-      if (fs.existsSync(cacheFilePath)) {
-        logStep("--skip-gemini: Found _gemini_cache.json → loading cached data and regenerating HTML...");
+      const videoDir = path.dirname(path.resolve(videoPath));
+      const videoBaseName = path.basename(videoPath, path.extname(videoPath));
+      const candidatePaths = [
+        path.join(videoDir, `${videoBaseName}_gemini_cache.json`),
+        path.join(videoDir, '_gemini_cache.json')
+      ];
+      if (srtPath && fs.existsSync(srtPath)) {
+        const srtDir = path.dirname(path.resolve(srtPath));
+        candidatePaths.push(path.join(srtDir, `${videoBaseName}_gemini_cache.json`));
+        candidatePaths.push(path.join(srtDir, '_gemini_cache.json'));
+      }
+
+      const existingCandidates = [...new Set(candidatePaths)].filter(p => fs.existsSync(p));
+      let cacheFilePath = null;
+
+      for (const cand of existingCandidates) {
+        try {
+          const content = JSON.parse(fs.readFileSync(cand, 'utf-8'));
+          if (content.videoFile && content.videoFile !== path.basename(videoPath)) {
+            throw new Error(`CRITICAL FAIL-CLOSED: Cache file "${cand}" belongs to "${content.videoFile}", not "${path.basename(videoPath)}". Refusing cross-video contamination.`);
+          }
+          cacheFilePath = cand;
+          break;
+        } catch (e) {
+          if (e.message.includes('CRITICAL FAIL-CLOSED')) throw e;
+        }
+      }
+
+      if (cacheFilePath) {
+        logStep(`--skip-gemini: Found valid cache at ${cacheFilePath} → loading cached data and regenerating HTML...`);
         const cached = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
         totalDuration = cached.totalDuration || 10;
         
@@ -6672,17 +6832,7 @@ async function runPipeline(opts = {}) {
         fs.writeFileSync(compositionHtmlPath, htmlContent, 'utf-8');
         logSuccess(`HTML regenerated from Gemini cache! Duration: ${totalDuration}s`);
       } else {
-        // ── Không có cache: dùng index.html sẵn có ──────────────────────────
-        logStep("--skip-gemini: No _gemini_cache.json found. Using existing index.html...");
-        if (!fs.existsSync(compositionHtmlPath)) {
-          throw new Error(`No index.html and no _gemini_cache.json. Run without --skip-gemini first.`);
-        }
-        const htmlContent = fs.readFileSync(compositionHtmlPath, 'utf-8');
-        const durationMatch = htmlContent.match(/data-duration=["'](\d+(?:\.\d+)?)["']/);
-        if (durationMatch && durationMatch[1]) {
-          totalDuration = Math.ceil(parseFloat(durationMatch[1]) + 0.5);
-        }
-        logSuccess(`Using existing index.html. Duration: ${totalDuration}s`);
+        throw new Error(`CRITICAL FAIL-CLOSED: --skip-gemini was specified, but no local cache exists for "${videoPath}". Refusing to load unrelated global assets. Run without --skip-gemini first to generate cache.`);
       }
     } else {
       try {
@@ -6825,18 +6975,22 @@ async function runPipeline(opts = {}) {
         // Mỗi lần full run xong → tự lưu cache; lần sau --skip-gemini sẽ
         // regenerate HTML từ cache mà không cần gọi lại Gemini API
         try {
-          fs.writeFileSync(
-            path.resolve('_gemini_cache.json'),
-            JSON.stringify({
-              sentences:     semanticOutput.sentences,
-              overlays:      semanticOutput.overlays,
-              totalDuration,
-              hook:          geminiOutput.hook || null,
-              broll_schedule: geminiOutput.broll_schedule || [], // save schedule too!
-            }, null, 2),
-            'utf-8'
-          );
-          logSuccess('Gemini output cached → _gemini_cache.json (--skip-gemini sẽ regen HTML từ đây)');
+          const srtDir = srtPath ? path.dirname(srtPath) : (videoPath ? path.dirname(videoPath) : '.');
+          const videoBaseName = path.basename(videoPath, path.extname(videoPath));
+          const cachePayload = {
+            videoFile:     path.basename(videoPath),
+            sentences:     semanticOutput.sentences,
+            overlays:      semanticOutput.overlays,
+            totalDuration,
+            hook:          geminiOutput.hook || null,
+            broll_schedule: geminiOutput.broll_schedule || [],
+          };
+          if (srtDir !== '.') {
+            fs.writeFileSync(path.join(srtDir, '_gemini_cache.json'), JSON.stringify(cachePayload, null, 2), 'utf-8');
+            fs.writeFileSync(path.join(srtDir, `${videoBaseName}_gemini_cache.json`), JSON.stringify(cachePayload, null, 2), 'utf-8');
+          }
+          fs.writeFileSync(path.resolve('_gemini_cache.json'), JSON.stringify(cachePayload, null, 2), 'utf-8');
+          logSuccess('Gemini output cached with videoFile tag (--skip-gemini sẽ load đúng video cache)');
         } catch (_ce) {
           logWarning(`Could not save Gemini cache: ${_ce.message}`);
         }
@@ -6938,7 +7092,7 @@ async function runPipeline(opts = {}) {
     // -------------------------------------------------------------
     // FFmpeg Direct Overlay Stitching
     // -------------------------------------------------------------
-    logStep("Calling FFmpeg to composite transparent overlay PNG sequence directly on input video...");
+    logStep("Calling FFmpeg to composite transparent overlay PNG sequence and master audio in a single pass...");
     const framePattern = path.join(tempDir, 'frame_%05d.png');
     const brollSegs = brollSegments;
     const pngInputIdx = 1 + brollSegs.length;
@@ -6946,66 +7100,87 @@ async function runPipeline(opts = {}) {
     const videoFps = getVideoFps(videoPath);
     logSuccess(`Main video: ${mainW}×${mainH} @ ${videoFps}fps`);
     const brollFilter = buildBrollFilter(brollSegs, pngInputIdx, mainW, mainH, videoFps);
-    logStep("Measuring audio loudness for two-pass normalization...");
-    const loudStats = measureLoudnormStats(videoPath);
+
+    // ── Build Audio Plan ONCE before Loudnorm Pass 1 ──────────────────
+    const audioPlan = buildAudioPlan(sfxOverlayEvents, brollSegments);
+    logStep(`Built unified audio plan with ${audioPlan.length} SFX event(s). Measuring mixed audio loudness (Pass 1)...`);
+    const loudStats = measureMixedAudioLoudnorm(videoPath, audioPlan);
     if (loudStats) {
-      logSuccess(`Loudnorm measured: I=${loudStats.input_i} LUFS, LRA=${loudStats.input_lra}, TP=${loudStats.input_tp}`);
+      logSuccess(`Loudnorm Pass 1 measured on mixed audio: I=${loudStats.input_i} LUFS, LRA=${loudStats.input_lra}, TP=${loudStats.input_tp}`);
     } else {
-      logWarning("Loudnorm measurement failed — falling back to single-pass.");
+      logWarning("Mixed loudnorm measurement failed — falling back to single-pass loudnorm.");
     }
+
     const loudnormFilter = loudStats
-      ? `loudnorm=I=${AUDIO_LUFS_TARGET}:TP=${AUDIO_TRUE_PEAK_DB}:LRA=${AUDIO_LRA}:measured_i=${loudStats.input_i}:measured_lra=${loudStats.input_lra}:measured_tp=${loudStats.input_tp}:measured_thresh=${loudStats.input_thresh}:offset=${loudStats.target_offset}:linear=true`
-      : `loudnorm=I=${AUDIO_LUFS_TARGET}:TP=${AUDIO_TRUE_PEAK_DB}:LRA=${AUDIO_LRA}`;
-    const audioFilter = [
-      `highpass=f=${AUDIO_HIGHPASS_HZ}`,
-      `agate=threshold=${AUDIO_GATE_THRESHOLD}:attack=${AUDIO_GATE_ATTACK_MS}:release=${AUDIO_GATE_RELEASE_MS}:knee=2.828`,
-      `afftdn=nf=${AUDIO_DENOISE_FLOOR}`,
-      `equalizer=f=${AUDIO_EQ_MUD_HZ}:width_type=o:width=2:g=${AUDIO_EQ_MUD_GAIN}`,
-      `equalizer=f=${AUDIO_EQ_DESS_HZ}:width_type=o:width=1.5:g=${AUDIO_EQ_DESS_GAIN}`,
-      `equalizer=f=${AUDIO_EQ_PRESENCE_HZ}:width_type=o:width=2:g=${AUDIO_EQ_PRESENCE_GAIN}`,
-      `equalizer=f=${AUDIO_EQ_AIR_HZ}:width_type=o:width=2:g=${AUDIO_EQ_AIR_GAIN}`,
-      `acompressor=threshold=${AUDIO_COMP_THRESHOLD}dB:ratio=${AUDIO_COMP_RATIO}:attack=${AUDIO_COMP_ATTACK_MS}:release=${AUDIO_COMP_RELEASE_MS}:makeup=4`,
-      loudnormFilter
-    ].join(',');
-    const ffmpegCmd = `ffmpeg -y -i "${videoPath}"${brollFilter.inputs} -framerate ${fps} -i "${framePattern}" -filter_complex "${brollFilter.filterStr}" -map "[outv]" -map 0:a? -c:v libx264 -pix_fmt yuv420p -c:a aac -af "${audioFilter}" "${outputPath}"`;
+      ? `loudnorm=I=${AUDIO_LUFS_TARGET}:TP=-1.5:LRA=${AUDIO_LRA}:measured_i=${loudStats.input_i}:measured_lra=${loudStats.input_lra}:measured_tp=${loudStats.input_tp}:measured_thresh=${loudStats.input_thresh}:offset=${loudStats.target_offset}:linear=true`
+      : `loudnorm=I=${AUDIO_LUFS_TARGET}:TP=-1.5:LRA=${AUDIO_LRA}`;
+
+    // SFX inputs start after input 0 (video), inputs 1..brollSegs.length (broll), input 1+brollSegs.length (framePattern)
+    const sfxStartInputIdx = 1 + brollSegs.length + 1;
+    const sfxFilters = audioPlan.map((e, idx) => {
+      const inputIdx = sfxStartInputIdx + idx;
+      return `[${inputIdx}:a]volume=${e.vol}dB,adelay=${e.delayMs}|${e.delayMs}[sfx${idx}]`;
+    });
+
+    let audioMixStr;
+    if (audioPlan.length > 0) {
+      const mixInputs = ['[vproc]', ...audioPlan.map((_, idx) => `[sfx${idx}]`)].join('');
+      audioMixStr = `${sfxFilters.join(';')};${mixInputs}amix=inputs=${audioPlan.length + 1}:duration=first:dropout_transition=0:normalize=0[mixed_audio]`;
+    } else {
+      audioMixStr = `[vproc]anull[mixed_audio]`;
+    }
+
+    const voiceChain = buildVoiceProcessingChain();
+    const fullAudioFilter = `[0:a]${voiceChain}[vproc];${audioMixStr};[mixed_audio]${loudnormFilter}[outa]`;
+    const combinedFilterComplex = `${brollFilter.filterStr};${fullAudioFilter}`;
+    const sfxInputsStr = audioPlan.length ? ' ' + audioPlan.map(e => `-i "${e.filePath}"`).join(' ') : '';
+
+    const ffmpegCmd = `ffmpeg -y -i "${videoPath}"${brollFilter.inputs} -framerate ${fps} -i "${framePattern}"${sfxInputsStr} -filter_complex "${combinedFilterComplex}" -map "[outv]" -map "[outa]" -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 192k -ar 48000 -ac 2 "${outputPath}"`;
     console.log(`Running: ${ffmpegCmd}\n`);
 
     execSync(ffmpegCmd, { stdio: 'inherit' });
-    logSuccess(`FFmpeg compositing complete!`);
+    logSuccess(`FFmpeg single-pass compositing and audio mastering complete!`);
 
+    // ── Strict Fail-Closed Post-Render Audio QA Validation ────────────
+    logStep("Running Post-Render Audio QA Validation on final output...");
     if (!hasAudioStream(outputPath)) {
-      logWarning("Output video has no audio track. Injecting a silent audio track for compatibility...");
-      const tempSilent = outputPath.replace(/\.mp4$/i, '_silent.mp4');
-      const addSilentCmd = `ffmpeg -y -i "${outputPath}" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -c:v copy -c:a aac -shortest "${tempSilent}"`;
-      try {
-        execSync(addSilentCmd, { stdio: 'pipe' });
-        fs.copyFileSync(tempSilent, outputPath);
-        fs.rmSync(tempSilent, { force: true });
-        logSuccess("Injecting silent audio track completed successfully!");
-      } catch (err) {
-        logError(`Failed to inject silent audio track: ${err.message}`);
-      }
+      throw new Error(`CRITICAL AUDIO QA FAILED: Output video "${outputPath}" has no audio stream!`);
     }
 
-    mixOverlaySfxIntoOutput(outputPath, sfxOverlayEvents);   // card SFX — content-driven
-    addHookSfx(outputPath);                                   // hook SFX — t=0
-    addBrollSfx(outputPath, brollSegments);                   // b-roll SFX — content-driven
-
-    if (mainW !== 1080 || mainH !== 1920) {
-      logStep("Normalizing video dimensions to standard 9:16 (1080x1920) for platform compatibility...");
-      const scaleW = Math.round((mainW * 1920) / mainH);
-      const evenScaleW = scaleW % 2 === 0 ? scaleW : scaleW - 1;
-      const tempPadded = outputPath.replace(/\.mp4$/i, '_padded.mp4');
-      const padCmd = `ffmpeg -y -i "${outputPath}" -vf "scale=${evenScaleW}:1920,pad=1080:1920:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -pix_fmt yuv420p -c:a copy "${tempPadded}"`;
-      try {
-        execSync(padCmd, { stdio: 'pipe' });
-        fs.copyFileSync(tempPadded, outputPath);
-        fs.rmSync(tempPadded, { force: true });
-        logSuccess("Video dimensions normalized to 1080x1920 successfully!");
-      } catch (err) {
-        logError(`Failed to normalize video dimensions: ${err.message}`);
-      }
+    const probeJson = execSync(
+      `ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,channels,sample_rate -of json "${outputPath}"`,
+      { encoding: 'utf8' }
+    );
+    const probeData = JSON.parse(probeJson);
+    const aStream = probeData.streams && probeData.streams[0];
+    if (!aStream) {
+      throw new Error(`CRITICAL AUDIO QA FAILED: No audio stream found by ffprobe in "${outputPath}"!`);
     }
+    if (aStream.codec_name !== 'aac') {
+      throw new Error(`CRITICAL AUDIO QA FAILED: Expected audio codec 'aac', got '${aStream.codec_name}'!`);
+    }
+    if (Number(aStream.channels) !== 2) {
+      throw new Error(`CRITICAL AUDIO QA FAILED: Expected 2 channels (stereo), got ${aStream.channels}!`);
+    }
+    if (Number(aStream.sample_rate) !== 48000) {
+      throw new Error(`CRITICAL AUDIO QA FAILED: Expected 48000 Hz sample rate, got ${aStream.sample_rate}!`);
+    }
+
+    const qaLoudStats = measureLoudnormStats(outputPath);
+    if (!qaLoudStats) {
+      throw new Error(`CRITICAL AUDIO QA FAILED: Unable to measure loudness on final output "${outputPath}"!`);
+    }
+    const finalLUFS = parseFloat(qaLoudStats.input_i);
+    const finalTP = parseFloat(qaLoudStats.input_tp);
+    logSuccess(`Final Audio QA Stats: Integrated Loudness = ${finalLUFS} LUFS, True Peak = ${finalTP} dBTP`);
+
+    if (finalLUFS < -15.0 || finalLUFS > -13.0) {
+      throw new Error(`CRITICAL AUDIO QA FAILED: Final Integrated Loudness (${finalLUFS} LUFS) is outside acceptable tolerance [-15.0, -13.0] LUFS!`);
+    }
+    if (finalTP > -1.0) {
+      throw new Error(`CRITICAL AUDIO QA FAILED: Final True Peak (${finalTP} dBTP) exceeds limit (-1.0 dBTP)!`);
+    }
+    logSuccess(`Audio QA PASSED: Output video meets all broadcast and social loudness standards.`);
 
     // Staging frames cleanup
     logStep("Cleaning up staging frame screenshots...");
