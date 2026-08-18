@@ -22,7 +22,8 @@ try {
   if (output.includes('CRITICAL FAIL-CLOSED: Input video') && output.includes('has no audio stream')) {
     console.log('✓ TEST 1 PASSED: Correctly threw CRITICAL FAIL-CLOSED when input audio stream was missing.');
   } else {
-    console.log(`✓ TEST 1 PASSED: Process aborted with non-zero exit code.`);
+    console.error(`❌ TEST 1 FAILED: Unexpected error received: ${output.slice(0, 300)}`);
+    allPassed = false;
   }
 }
 if (fs.existsSync(noAudioVideo)) fs.rmSync(noAudioVideo, { force: true });
@@ -51,17 +52,18 @@ try {
   console.error('❌ TEST 2 FAILED: Expected QA to reject True Peak > -1.0 dBTP, but it passed.');
   allPassed = false;
 } catch (err) {
-  if (err.message.includes('Final True Peak') && err.message.includes('exceeds limit')) {
+  if (err.message && err.message.includes('CRITICAL AUDIO QA FAILED: Final True Peak') && err.message.includes('exceeds limit')) {
     console.log(`✓ TEST 2 PASSED: Successfully rejected clipping True Peak (+1.25 dBTP): ${err.message}`);
   } else {
-    console.log(`✓ TEST 2 PASSED with error: ${err.message}`);
+    console.error(`❌ TEST 2 FAILED: Unexpected error: ${err.message}`);
+    allPassed = false;
   }
 }
 
 // ── TEST 3: Audio QA Loudness (LUFS) failure → FAIL-CLOSED ─────────────────
 console.log('\n--- TEST 3: Post-Render Audio QA blocks Integrated Loudness out of [-15.0, -13.0] LUFS ---');
 const dummyLoudPath = path.resolve('qa_regression', 'test_too_quiet.mp4');
-// Generate audio at -28 LUFS (too quiet)
+// Generate audio at -46 LUFS (too quiet)
 execSync(`ffmpeg -y -f lavfi -i "sine=frequency=1000:duration=2" -af "volume=-25dB" -c:a aac "${dummyLoudPath}"`, { stdio: 'ignore' });
 
 try {
@@ -69,17 +71,17 @@ try {
   console.error('❌ TEST 3 FAILED: Expected QA to reject audio with LUFS outside [-15, -13], but it passed.');
   allPassed = false;
 } catch (err) {
-  if (err.message.includes('Integrated Loudness') && err.message.includes('outside tolerance')) {
+  if (err.message && err.message.includes('CRITICAL AUDIO QA FAILED: Final Integrated Loudness') && err.message.includes('outside tolerance')) {
     console.log(`✓ TEST 3 PASSED: Successfully rejected out-of-spec loudness: ${err.message}`);
   } else {
-    console.log(`✓ TEST 3 PASSED with error: ${err.message}`);
+    console.error(`❌ TEST 3 FAILED: Unexpected error: ${err.message}`);
+    allPassed = false;
   }
 }
 if (fs.existsSync(dummyLoudPath)) fs.rmSync(dummyLoudPath, { force: true });
 
 // ── TEST 4: Missing local cache under --skip-gemini → FAIL-CLOSED ──────────
 console.log('\n--- TEST 4: Missing local cache under --skip-gemini ---');
-// Point to a directory without any cache
 const dummyVideoDir = path.resolve('qa_regression', 'isolated_video_test');
 fs.mkdirSync(dummyVideoDir, { recursive: true });
 const isolatedVideo = path.join(dummyVideoDir, 'input.mp4');
@@ -94,7 +96,8 @@ try {
   if (output.includes('CRITICAL FAIL-CLOSED: --skip-gemini was specified, but no local cache exists')) {
     console.log('✓ TEST 4 PASSED: Cleanly rejected missing local cache without falling back to stale global index.html.');
   } else {
-    console.log(`✓ TEST 4 PASSED: Aborted with expected error.`);
+    console.error(`❌ TEST 4 FAILED: Unexpected error: ${output.slice(0, 300)}`);
+    allPassed = false;
   }
 }
 
@@ -117,7 +120,8 @@ try {
   if (output.includes('CRITICAL FAIL-CLOSED: Cache file') && output.includes('Refusing cross-video contamination')) {
     console.log('✓ TEST 5 PASSED: Detected mismatched cache ownership and prevented cross-video contamination.');
   } else {
-    console.log(`✓ TEST 5 PASSED: Aborted with expected mismatch error.`);
+    console.error(`❌ TEST 5 FAILED: Unexpected error: ${output.slice(0, 300)}`);
+    allPassed = false;
   }
 }
 
@@ -127,7 +131,8 @@ if (fs.existsSync(dummyVideoDir)) fs.rmSync(dummyVideoDir, { recursive: true, fo
 console.log('\n==================================================================');
 if (allPassed) {
   console.log('✓ ALL 5 NEGATIVE AND FAIL-SAFE VALIDATION TESTS PASSED 100%!');
+  process.exit(0);
 } else {
-  console.log('❌ SOME TESTS FAILED.');
+  console.error('❌ SOME TESTS FAILED.');
+  process.exit(1);
 }
-console.log('==================================================================\n');

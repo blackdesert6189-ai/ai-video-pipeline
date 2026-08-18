@@ -90,7 +90,9 @@ if (fs.existsSync(isolatedDir)) fs.rmSync(isolatedDir, { recursive: true, force:
 console.log('\n==================================================================');
 if (allPassed) {
   console.log('✓ ALL REAL CLI FAIL-SAFE TESTS PASSED 100% (EXIT CODE != 0, ZERO FALSE SUCCESS)!');
+  process.exit(0);
 } else {
-  console.log('❌ SOME CLI TESTS FAILED.');
+  console.error('❌ SOME CLI TESTS FAILED.');
+  process.exit(1);
 }
 console.log('==================================================================\n');

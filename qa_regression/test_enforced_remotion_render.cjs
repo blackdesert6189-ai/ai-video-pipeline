@@ -82,7 +82,9 @@ if (fs.existsSync(validProps)) fs.rmSync(validProps, { force: true });
 console.log('\n==================================================================');
 if (allPassed) {
   console.log('✓ ALL ENFORCED REMOTION RENDER TESTS PASSED 100%!');
+  process.exit(0);
 } else {
-  console.log('❌ SOME TESTS FAILED.');
+  console.error('❌ SOME TESTS FAILED.');
+  process.exit(1);
 }
 console.log('==================================================================\n');
