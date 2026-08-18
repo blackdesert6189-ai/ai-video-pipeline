@@ -11,7 +11,13 @@ import { NutritionCard } from "./components/NutritionCard";
 import { CTA } from "./components/CTA";
 import { Subtitle } from "./components/Subtitle";
 
-export const SceneDraftReel05: React.FC = () => {
+export interface SceneDraftReel05Props {
+  voiceover?: string;
+  voiceoverAudio?: string;
+  voiceoverFile?: string;
+}
+
+export const SceneDraftReel05: React.FC<SceneDraftReel05Props> = (props = {}) => {
   const frame = useCurrentFrame();
   const [handle] = useState(() => delayRender("Loading Be Vietnam Pro font"));
 
@@ -36,6 +42,10 @@ export const SceneDraftReel05: React.FC = () => {
   const aiFullText = "Chào bạn! Khi thèm ăn đêm, nên ưu tiên thực phẩm đạm nhẹ và chất xơ để ổn định cơn đói:\n\n• 100g Sữa chua không đường (~60 kcal)\n• 5 hạt Hạnh nhân (~35 kcal)\n\nTổng: ~95 kcal. An toàn & ngủ ngon.";
   const streamCharCount = frame >= 175 ? Math.floor(Math.min(1.0, (frame - 175) / 75) * aiFullText.length) : 0;
   const visibleAiText = aiFullText.substring(0, streamCharCount);
+
+  // Resolved dynamic voiceover from props (NO hardcoded test fixture)
+  const rawVo = props.voiceoverAudio || props.voiceoverFile || props.voiceover;
+  const resolvedVoiceover = (typeof rawVo === "string" && /\.(mp3|wav|m4a|aac)$/i.test(rawVo)) ? rawVo : "";
 
   return (
     <AbsoluteFill style={{ backgroundColor: theme.colors.bgSlateDark, fontFamily: theme.fontFamily, color: theme.colors.textPrimary }}>
@@ -173,8 +183,12 @@ export const SceneDraftReel05: React.FC = () => {
         </div>
       </SafeArea>
 
-      {/* Audio Layer */}
-      <Audio src={staticFile("music.mp3")} volume={0.10} loop />
+      {/* Audio Layer: Voiceover from props + Background Music + SFX */}
+      {resolvedVoiceover && (
+        <Audio src={staticFile(resolvedVoiceover)} volume={0.92} startFrom={0} />
+      )}
+      <Audio src={staticFile("music.mp3")} volume={0.08} loop />
+      <Audio src={staticFile("sfx_whoosh.mp3")} volume={0.18} startFrom={0} />
     </AbsoluteFill>
   );
 };
