@@ -63,11 +63,11 @@ export function saveOwnedCache({ videoPath, srtPath, sentences, overlays, totalD
 
   const cachePayload = {
     videoFile: path.basename(videoPath),
-    sentences: sentences || [],
-    overlays: overlays || [],
-    totalDuration: totalDuration || 0,
-    hook: hook || null,
-    broll_schedule: broll_schedule || []
+    sentences,
+    overlays,
+    totalDuration,
+    hook,
+    broll_schedule
   };
 
   const serialized = JSON.stringify(cachePayload, null, 2);

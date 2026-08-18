@@ -6647,17 +6647,11 @@ async function runPipeline(opts = {}) {
     console.log(`Video Path:  ${videoPath}`);
     console.log(`Output Path: ${outputPath}`);
 
-    if (reportOnly) {
-      if (!fs.existsSync(srtPath)) {
-        throw new Error(`SRT file not found at: ${srtPath}`);
-      }
-    } else {
-      if (!fs.existsSync(videoPath)) {
-        throw new Error(`CRITICAL: Input video file not found at: ${videoPath}`);
-      }
-      if (!hasAudioStream(videoPath)) {
-        throw new Error(`CRITICAL FAIL-CLOSED: Input video "${videoPath}" has no audio stream. Aborting pipeline.`);
-      }
+    if (!fs.existsSync(videoPath)) {
+      throw new Error(`CRITICAL: Input video file not found at: ${videoPath}`);
+    }
+    if (!hasAudioStream(videoPath)) {
+      throw new Error(`CRITICAL FAIL-CLOSED: Input video "${videoPath}" has no audio stream. Aborting pipeline.`);
     }
 
     if (skipGemini) {

@@ -15,15 +15,7 @@ export function parseArgs(rawArgs = process.argv.slice(2)) {
   let batchDir   = "";
   let outputDir  = "";
 
-  const knownValuedFlags = new Set([
-    '--srt',
-    '--video',
-    '--output',
-    '--batch',
-    '--batch-dir',
-    '--output-dir',
-    '--out-dir'
-  ]);
+
 
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i];
