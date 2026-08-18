@@ -24,6 +24,21 @@ import { parseOverlayTitle } from './metricParser.js';
 import { classifyOverlayType, enhanceSemanticOverlays } from './semanticOverlayEngine.js';
 import { reportSemanticArchitecture } from './semanticReport.js';
 import { renderPattern, getPatternCSS } from './visualPatternRenderer.js';
+import {
+  COLOR_RESET,
+  COLOR_GREEN,
+  COLOR_RED,
+  COLOR_YELLOW,
+  COLOR_CYAN,
+  COLOR_MAGENTA,
+  logStep,
+  logSuccess,
+  logWarning,
+  logError
+} from './src/pipeline/logger.js';
+import { parseArgs } from './src/pipeline/cli.js';
+import { parseSRT, timeToSeconds } from './src/pipeline/srt.js';
+import { loadOwnedCache, saveOwnedCache } from './src/pipeline/cache.js';
 
 // ── Windows: force UTF-8 console output (fix UnicodeEncodeError for ✓ ✗ ⚠) ──
 if (process.platform === 'win32') {
@@ -43,74 +58,6 @@ try {
   brollIndex = JSON.parse(fs.readFileSync('./broll_index.json', 'utf8'));
   console.log(`[broll] ${brollIndex.length} B-roll clips loaded`);
 } catch { /* no broll index yet */ }
-
-/**
- * pipeline.js - CNFI Premium AI Video Pipeline (Puppeteer Custom Renderer Edition)
- * Automatically parses SRT, queries Gemini for structured layouts, writes index.html,
- * launches headless Chrome with high protocolTimeout, captures PNGs at 15fps,
- * and composites them directly onto the background video using FFmpeg.
- */
-
-// Calibrate colors and console trace style
-const COLOR_RESET = "\x1b[0m";
-const COLOR_GREEN = "\x1b[32m";
-const COLOR_RED = "\x1b[31m";
-const COLOR_YELLOW = "\x1b[33m";
-const COLOR_CYAN = "\x1b[36m";
-const COLOR_MAGENTA = "\x1b[35m";
-
-function logStep(msg) {
-  console.log(`\n${COLOR_CYAN}◆  ${msg}${COLOR_RESET}`);
-}
-
-function logSuccess(msg) {
-  console.log(`${COLOR_GREEN}✓  ${msg}${COLOR_RESET}`);
-}
-
-function logWarning(msg) {
-  console.log(`${COLOR_YELLOW}⚠  ${msg}${COLOR_RESET}`);
-}
-
-function logError(msg) {
-  console.log(`${COLOR_RED}✗  ${msg}${COLOR_RESET}`);
-}
-
-// -------------------------------------------------------------
-// 1. Argument Parsing
-// -------------------------------------------------------------
-const args = process.argv.slice(2);
-let srtPath    = "";
-let videoPath  = "";
-let outputPath = "";
-let skipGemini = false;
-let reportOnly = false;
-let batchDir   = "";   // --batch <dir>  → scan for video+SRT pairs
-let outputDir  = "";   // --output-dir <dir>  → where batch results go
-
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === "--srt" && args[i + 1]) {
-    srtPath = args[i + 1]; i++;
-  } else if (args[i] === "--video" && args[i + 1]) {
-    videoPath = args[i + 1]; i++;
-  } else if (args[i] === "--output" && args[i + 1]) {
-    outputPath = args[i + 1]; i++;
-  } else if ((args[i] === "--batch" || args[i] === "--batch-dir") && args[i + 1]) {
-    batchDir = path.resolve(args[i + 1]); i++;
-  } else if ((args[i] === "--output-dir" || args[i] === "--out-dir") && args[i + 1]) {
-    outputDir = path.resolve(args[i + 1]); i++;
-  } else if (args[i] === "--skip-gemini") {
-    skipGemini = true;
-  } else if (args[i] === "--report") {
-    reportOnly = true;
-  }
-}
-
-// Fallback to positional arguments (single-video mode only)
-if (!batchDir) {
-  if (!srtPath    && args[0]) srtPath    = args[0];
-  if (!videoPath  && args[1]) videoPath  = args[1];
-  if (!outputPath && args[2]) outputPath = args[2];
-}
 
 // Constants / Configuration
 const GEMINI_API_KEY    = process.env.GEMINI_API_KEY || '';
@@ -881,17 +828,7 @@ const SFX_CATEGORY_KEYWORDS = [
   { category: "music", keywords: ["music", "instrumental", "intro", "motivational", "upbeat", "podcast"] }
 ];
 
-if (reportOnly) {
-  if (!srtPath) {
-    logError("--report mode requires --srt <srt_path>");
-    console.log(`\nUsage:\n  node pipeline.js --srt <srt_path> --report`);
-    process.exit(1);
-  }
-} else if (!videoPath || !outputPath || (!skipGemini && !srtPath)) {
-  logError("Missing required arguments!");
-  console.log(`\nUsage:\n  node pipeline.js --srt <srt_path> --video <video_path> --output <output_path> [--skip-gemini]`);
-  process.exit(1);
-}
+
 
 function sfxTempOutputPath(finalOutputPath) {
   const ext = path.extname(finalOutputPath) || ".mp4";
@@ -1613,40 +1550,6 @@ function buildBrollFilter(segs, pngInputIndex, mainW, mainH, videoFps = 30) {
   });
   const filterStr = filters.join(';') + `;[${pngInputIndex}:v]${prevVid}scale2ref[ov][base];[base][ov]overlay=0:0[composited];${gradeFilter}`;
   return { inputs, filterStr };
-}
-
-// -------------------------------------------------------------
-// 2. SRT Parsing Engine
-// -------------------------------------------------------------
-function parseSRT(srtContent) {
-  const normalized = srtContent.replace(/\r\n/g, '\n').trim();
-  const blocks = normalized.split(/\n\s*\n/);
-  const cues = [];
-
-  for (const block of blocks) {
-    const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length < 3) continue;
-
-    const index = parseInt(lines[0], 10);
-    const timeMatch = lines[1].match(/(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[.,](\d{3})/);
-    if (!timeMatch) continue;
-
-    const startSec = timeToSeconds(timeMatch[1], timeMatch[2], timeMatch[3], timeMatch[4]);
-    const endSec = timeToSeconds(timeMatch[5], timeMatch[6], timeMatch[7], timeMatch[8]);
-    const text = lines.slice(2).join(' ');
-
-    cues.push({
-      index,
-      startTime: startSec,
-      endTime: endSec,
-      text
-    });
-  }
-  return cues;
-}
-
-function timeToSeconds(hrs, mins, secs, ms) {
-  return parseInt(hrs, 10) * 3600 + parseInt(mins, 10) * 60 + parseInt(secs, 10) + parseInt(ms, 10) / 1000;
 }
 
 // -------------------------------------------------------------
@@ -6709,15 +6612,28 @@ async function applyRuntimeVisualPatches(page) {
 // -------------------------------------------------------------
 // 5. Orchestration Pipeline Flow
 // -------------------------------------------------------------
-// opts: { srtPath, videoPath, outputPath, skipGemini, noexit }
-// In batch mode, caller sets srtPath/videoPath/outputPath globals before calling.
+// opts: { srtPath, videoPath, outputPath, skipGemini, reportOnly, noexit }
 // noexit=true → throw on error instead of process.exit(1) so batch can continue.
 async function runPipeline(opts = {}) {
-  // batch-mode: override globals with per-job values
-  if (opts.srtPath    != null) srtPath    = opts.srtPath;
-  if (opts.videoPath  != null) videoPath  = opts.videoPath;
-  if (opts.outputPath != null) outputPath = opts.outputPath;
-  if (opts.skipGemini != null) skipGemini = opts.skipGemini;
+  const srtPath    = opts.srtPath || '';
+  const videoPath  = opts.videoPath || '';
+  const outputPath = opts.outputPath || '';
+  const skipGemini = Boolean(opts.skipGemini);
+  const reportOnly = Boolean(opts.reportOnly);
+
+  if (reportOnly) {
+    if (!srtPath) {
+      logError("--report mode requires --srt <srt_path>");
+      console.log(`\nUsage:\n  node pipeline.js --srt <srt_path> --report`);
+      if (opts.noexit) throw new Error("--report mode requires --srt <srt_path>");
+      process.exit(1);
+    }
+  } else if (!videoPath || !outputPath || (!skipGemini && !srtPath)) {
+    logError("Missing required arguments!");
+    console.log(`\nUsage:\n  node pipeline.js --srt <srt_path> --video <video_path> --output <output_path> [--skip-gemini]`);
+    if (opts.noexit) throw new Error("Missing required arguments!");
+    process.exit(1);
+  }
 
   const tempDir = path.resolve("temp_frames");
   const compositionHtmlPath = path.resolve("index.html");
@@ -6739,41 +6655,9 @@ async function runPipeline(opts = {}) {
     }
 
     if (skipGemini) {
-      const videoDir = path.dirname(path.resolve(videoPath));
-      const videoBaseName = path.basename(videoPath, path.extname(videoPath));
-      const candidatePaths = [
-        path.join(videoDir, `${videoBaseName}_gemini_cache.json`),
-        path.join(videoDir, '_gemini_cache.json')
-      ];
-      if (srtPath && fs.existsSync(srtPath)) {
-        const srtDir = path.dirname(path.resolve(srtPath));
-        candidatePaths.push(path.join(srtDir, `${videoBaseName}_gemini_cache.json`));
-        candidatePaths.push(path.join(srtDir, '_gemini_cache.json'));
-      }
-
-      const existingCandidates = [...new Set(candidatePaths)].filter(p => fs.existsSync(p));
-      let cacheFilePath = null;
-
-      for (const cand of existingCandidates) {
-        try {
-          const content = JSON.parse(fs.readFileSync(cand, 'utf-8'));
-          if (!content || !content.videoFile || typeof content.videoFile !== 'string' || content.videoFile.trim() === '') {
-            throw new Error(`CRITICAL FAIL-CLOSED: Cache file "${cand}" has no videoFile ownership metadata. Refusing unowned/legacy generic cache under --skip-gemini.`);
-          }
-          if (content.videoFile !== path.basename(videoPath)) {
-            throw new Error(`CRITICAL FAIL-CLOSED: Cache file "${cand}" belongs to "${content.videoFile}", not "${path.basename(videoPath)}". Refusing cross-video contamination.`);
-          }
-          cacheFilePath = cand;
-          break;
-        } catch (e) {
-          if (e.message.includes('CRITICAL FAIL-CLOSED')) throw e;
-        }
-      }
-
-      if (cacheFilePath) {
-        logStep(`--skip-gemini: Found valid cache at ${cacheFilePath} → loading cached data and regenerating HTML...`);
-        const cached = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
-        totalDuration = cached.totalDuration || 10;
+      const { cacheFilePath, data: cached } = loadOwnedCache(videoPath, srtPath);
+      logStep(`--skip-gemini: Found valid cache at ${cacheFilePath} → loading cached data and regenerating HTML...`);
+      totalDuration = cached.totalDuration || 10;
         
         // Populate sentences and overlays
         const sentences = cached.sentences || [];
@@ -6834,9 +6718,6 @@ async function runPipeline(opts = {}) {
         const htmlContent = generatePremiumHTML(sentences, overlays, totalDuration, hook, []);
         fs.writeFileSync(compositionHtmlPath, htmlContent, 'utf-8');
         logSuccess(`HTML regenerated from Gemini cache! Duration: ${totalDuration}s`);
-      } else {
-        throw new Error(`CRITICAL FAIL-CLOSED: --skip-gemini was specified, but no local cache exists for "${videoPath}". Refusing to load unrelated global assets. Run without --skip-gemini first to generate cache.`);
-      }
     } else {
       try {
         // Read SRT
@@ -6978,21 +6859,15 @@ async function runPipeline(opts = {}) {
         // Mỗi lần full run xong → tự lưu cache; lần sau --skip-gemini sẽ
         // regenerate HTML từ cache mà không cần gọi lại Gemini API
         try {
-          const srtDir = srtPath ? path.dirname(srtPath) : (videoPath ? path.dirname(videoPath) : '.');
-          const videoBaseName = path.basename(videoPath, path.extname(videoPath));
-          const cachePayload = {
-            videoFile:     path.basename(videoPath),
-            sentences:     semanticOutput.sentences,
-            overlays:      semanticOutput.overlays,
+          saveOwnedCache({
+            videoPath,
+            srtPath,
+            sentences: semanticOutput.sentences,
+            overlays: semanticOutput.overlays,
             totalDuration,
-            hook:          geminiOutput.hook || null,
-            broll_schedule: geminiOutput.broll_schedule || [],
-          };
-          if (srtDir !== '.') {
-            fs.writeFileSync(path.join(srtDir, '_gemini_cache.json'), JSON.stringify(cachePayload, null, 2), 'utf-8');
-            fs.writeFileSync(path.join(srtDir, `${videoBaseName}_gemini_cache.json`), JSON.stringify(cachePayload, null, 2), 'utf-8');
-          }
-          fs.writeFileSync(path.resolve('_gemini_cache.json'), JSON.stringify(cachePayload, null, 2), 'utf-8');
+            hook: geminiOutput.hook || null,
+            broll_schedule: geminiOutput.broll_schedule || []
+          });
           logSuccess('Gemini output cached with videoFile tag (--skip-gemini sẽ load đúng video cache)');
         } catch (_ce) {
           logWarning(`Could not save Gemini cache: ${_ce.message}`);
@@ -7224,7 +7099,7 @@ async function runPipeline(opts = {}) {
 //
 // All paths are dynamic — nothing hardcoded.
 // -------------------------------------------------------------
-async function runBatch(bDir, oDir) {
+async function runBatch(bDir, oDir, baseOpts = {}) {
   if (!fs.existsSync(bDir)) {
     logError(`Batch directory not found: ${bDir}`);
     process.exit(1);
@@ -7264,7 +7139,7 @@ async function runBatch(bDir, oDir) {
     console.log(`[BATCH ${i + 1}/${jobs.length}] ${label}`);
     console.log(`══════════════════════════════════════════════${COLOR_RESET}`);
     try {
-      await runPipeline({ ...job, noexit: true });
+      await runPipeline({ ...baseOpts, ...job, noexit: true });
       passed++;
       logSuccess(`[BATCH ${i + 1}/${jobs.length}] DONE → ${path.basename(job.outputPath)}`);
     } catch (err) {
@@ -7281,9 +7156,24 @@ async function runBatch(bDir, oDir) {
 }
 
 // Entry point — batch vs single
-if (batchDir) {
-  const finalOutputDir = outputDir || path.join(batchDir, "output");
-  runBatch(batchDir, finalOutputDir).catch(e => { console.error(e); process.exit(1); });
+const cliOptions = parseArgs(process.argv.slice(2));
+
+// Top-level CLI validation (executed before batch dispatch in baseline main)
+if (cliOptions.reportOnly) {
+  if (!cliOptions.srtPath) {
+    logError("--report mode requires --srt <srt_path>");
+    console.log(`\nUsage:\n  node pipeline.js --srt <srt_path> --report`);
+    process.exit(1);
+  }
+} else if (!cliOptions.videoPath || !cliOptions.outputPath || (!cliOptions.skipGemini && !cliOptions.srtPath)) {
+  logError("Missing required arguments!");
+  console.log(`\nUsage:\n  node pipeline.js --srt <srt_path> --video <video_path> --output <output_path> [--skip-gemini]`);
+  process.exit(1);
+}
+
+if (cliOptions.batchDir) {
+  const finalOutputDir = cliOptions.outputDir || path.join(cliOptions.batchDir, "output");
+  runBatch(cliOptions.batchDir, finalOutputDir, cliOptions).catch(e => { console.error(e); process.exit(1); });
 } else {
-  runPipeline();
+  runPipeline(cliOptions);
 }
