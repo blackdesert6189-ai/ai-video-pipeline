@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 console.log('==================================================================');
-console.log('           NEGATIVE & FAIL-SAFE TEST SUITE (5/5 CASES)');
+console.log('           NEGATIVE & FAIL-SAFE TEST SUITE (6/6 CASES)');
 console.log('==================================================================\n');
 
 let allPassed = true;
@@ -125,12 +125,37 @@ try {
   }
 }
 
+// ── TEST 6: Unowned cache missing videoFile field ─────────────────────────
+console.log('\n--- TEST 6: Cache file missing videoFile ownership metadata is REJECTED ---');
+const unownedCache = path.join(dummyVideoDir, '_gemini_cache.json');
+fs.writeFileSync(unownedCache, JSON.stringify({
+  // NO videoFile field
+  totalDuration: 10,
+  sentences: [{ index: 1, text: "Sample sentence", startTime: 0, endTime: 3 }],
+  overlays: [{ sentence_index: 1, startTime: 0.5, endTime: 2.5, type: "card", title: "TEST" }]
+}));
+
+try {
+  execSync(`node pipeline.js --skip-gemini --video "${isolatedVideo}" --output "qa_regression/isolated_out.mp4"`, { stdio: 'pipe' });
+  console.error('❌ TEST 6 FAILED: Pipeline should have rejected unowned cache, but exited 0.');
+  allPassed = false;
+} catch (err) {
+  const output = String(err.stderr || '') + String(err.stdout || '');
+  if (output.includes('CRITICAL FAIL-CLOSED: Cache file') && output.includes('has no videoFile ownership metadata')) {
+    console.log('✓ TEST 6 PASSED: Rejected unowned legacy cache missing videoFile ownership metadata.');
+  } else {
+    console.error(`❌ TEST 6 FAILED: Unexpected error: ${output.slice(0, 300)}`);
+    allPassed = false;
+  }
+}
+
 // Cleanup isolated test directory
 if (fs.existsSync(dummyVideoDir)) fs.rmSync(dummyVideoDir, { recursive: true, force: true });
+if (fs.existsSync(path.resolve('qa_regression', 'isolated_out.mp4'))) fs.rmSync(path.resolve('qa_regression', 'isolated_out.mp4'), { force: true });
 
 console.log('\n==================================================================');
 if (allPassed) {
-  console.log('✓ ALL 5 NEGATIVE AND FAIL-SAFE VALIDATION TESTS PASSED 100%!');
+  console.log('✓ ALL 6 NEGATIVE AND FAIL-SAFE VALIDATION TESTS PASSED 100%!');
   process.exit(0);
 } else {
   console.error('❌ SOME TESTS FAILED.');

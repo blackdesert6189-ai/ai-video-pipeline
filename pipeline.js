@@ -6757,7 +6757,10 @@ async function runPipeline(opts = {}) {
       for (const cand of existingCandidates) {
         try {
           const content = JSON.parse(fs.readFileSync(cand, 'utf-8'));
-          if (content.videoFile && content.videoFile !== path.basename(videoPath)) {
+          if (!content || !content.videoFile || typeof content.videoFile !== 'string' || content.videoFile.trim() === '') {
+            throw new Error(`CRITICAL FAIL-CLOSED: Cache file "${cand}" has no videoFile ownership metadata. Refusing unowned/legacy generic cache under --skip-gemini.`);
+          }
+          if (content.videoFile !== path.basename(videoPath)) {
             throw new Error(`CRITICAL FAIL-CLOSED: Cache file "${cand}" belongs to "${content.videoFile}", not "${path.basename(videoPath)}". Refusing cross-video contamination.`);
           }
           cacheFilePath = cand;

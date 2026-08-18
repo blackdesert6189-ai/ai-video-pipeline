@@ -84,12 +84,37 @@ if (res3.exitCode !== 0 && hasMismatchError && !hasSuccess3) {
   allPassed = false;
 }
 
+// ── CLI TEST 4: --skip-gemini with unowned cache missing videoFile metadata ─
+console.log('\n--- CLI TEST 4: Real CLI with --skip-gemini where cache has NO videoFile ownership field ---');
+const unownedCacheFile = path.join(isolatedDir, '_gemini_cache.json');
+fs.writeFileSync(unownedCacheFile, JSON.stringify({
+  // NO videoFile field
+  totalDuration: 10,
+  sentences: [{ index: 1, text: "Sample sentence", startTime: 0, endTime: 3 }],
+  overlays: [{ sentence_index: 1, startTime: 0.5, endTime: 2.5, type: "card", title: "TEST" }]
+}, null, 2));
+
+const res4 = runCli(['--skip-gemini', '--video', isolatedVideo, '--output', 'qa_regression/cli_out4.mp4']);
+console.log(`[Exit Code]: ${res4.exitCode}`);
+
+const hasUnownedError = res4.allOutput.includes('CRITICAL FAIL-CLOSED: Cache file') && res4.allOutput.includes('has no videoFile ownership metadata');
+const hasSuccess4 = res4.allOutput.includes('HTML regenerated from Gemini cache') || res4.allOutput.includes('FFmpeg single-pass');
+const out4Exists = fs.existsSync(path.resolve('qa_regression', 'cli_out4.mp4'));
+
+if (res4.exitCode !== 0 && hasUnownedError && !hasSuccess4 && !out4Exists) {
+  console.log('✓ CLI TEST 4 PASSED: Process exited with non-zero code, rejected unowned legacy cache, and produced no output file.');
+} else {
+  console.error('❌ CLI TEST 4 FAILED:', { exitCode: res4.exitCode, hasUnownedError, hasSuccess4, out4Exists });
+  allPassed = false;
+}
+
 // Cleanup
 if (fs.existsSync(isolatedDir)) fs.rmSync(isolatedDir, { recursive: true, force: true });
+if (fs.existsSync(path.resolve('qa_regression', 'cli_out4.mp4'))) fs.rmSync(path.resolve('qa_regression', 'cli_out4.mp4'), { force: true });
 
 console.log('\n==================================================================');
 if (allPassed) {
-  console.log('✓ ALL REAL CLI FAIL-SAFE TESTS PASSED 100% (EXIT CODE != 0, ZERO FALSE SUCCESS)!');
+  console.log('✓ ALL 4 REAL CLI FAIL-SAFE TESTS PASSED 100% (EXIT CODE != 0, ZERO FALSE SUCCESS)!');
   process.exit(0);
 } else {
   console.error('❌ SOME CLI TESTS FAILED.');
