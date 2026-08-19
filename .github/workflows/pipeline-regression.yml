@@ -88,6 +88,9 @@ jobs:
       - name: Run Subtitle Split module test
         run: node qa_regression/test_subtitle_split.cjs
 
+      - name: Run Peak Smart Indent module test
+        run: node qa_regression/test_peak_smart_indent.cjs
+
       - name: Run CLI fail-safe suite
         run: node qa_regression/cli_failsafe_suite.cjs
 
