@@ -26,8 +26,12 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Ensure FFmpeg is available
-        run: which ffmpeg && which ffprobe
+      - name: Ensure FFmpeg is installed
+        run: |
+          if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
+          fi
 
       - name: Install Node dependencies
         run: npm ci
@@ -89,8 +93,12 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Ensure FFmpeg is available
-        run: which ffmpeg && which ffprobe
+      - name: Ensure FFmpeg is installed
+        run: |
+          if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
+          fi
 
       - name: Install Node dependencies
         run: npm ci
@@ -129,8 +137,12 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Ensure FFmpeg is available
-        run: which ffmpeg && which ffprobe
+      - name: Ensure FFmpeg is installed
+        run: |
+          if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
+          fi
 
       - name: Install Node dependencies
         run: npm ci
