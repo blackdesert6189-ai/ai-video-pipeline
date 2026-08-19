@@ -93,7 +93,9 @@ async function runTests() {
     assert.strictEqual(out.length, 1, 'Card should be retained');
     assert.strictEqual(out[0].title, 'TIẾT KIỆM CALO', 'Title should remain');
     assert.strictEqual(out[0].detail, '', 'Fragment detail must be cleared to empty string');
-    assert(warnings.some(w => w.includes('Fragment detail cleared: "TIẾT KIỆM CALO" / "và phần tiếp theo của câu trước"')), 'Must log exact fragment warning');
+    assert.deepStrictEqual(warnings, [
+      'Fragment detail cleared: "TIẾT KIỆM CALO" / "và phần tiếp theo của câu trước"'
+    ], 'Must match exact baseline warnings array');
     console.log('✓ TEST 4 PASSED: Fragment detail cleared and warning logged');
   } catch (err) {
     console.error('❌ TEST 4 FAILED:', err.message);
@@ -119,7 +121,9 @@ async function runTests() {
     const out = postProcessOverlays(input);
     assert.strictEqual(out.length, 1, 'Invalid card must be dropped');
     assert.strictEqual(out[0].title, 'HỢP LỆ HOÀN TOÀN');
-    assert(warnings.some(w => w.includes('Dropped bad card: "bạn đang nghĩ" / "Chi tiết hợp lệ"')), 'Must log exact drop warning');
+    assert.deepStrictEqual(warnings, [
+      'Dropped bad card: "bạn đang nghĩ" / "Chi tiết hợp lệ"'
+    ], 'Must match exact baseline warnings array');
     console.log('✓ TEST 5 PASSED: Invalid card dropped and warning logged');
   } catch (err) {
     console.error('❌ TEST 5 FAILED:', err.message);
@@ -147,7 +151,9 @@ async function runTests() {
     assert.strictEqual(out.length, 2, 'Non-list card overlapping list window [5, 9] must be dropped');
     assert.strictEqual(out[0].title, 'DANH SÁCH 1');
     assert.strictEqual(out[1].title, 'DANH SÁCH 2');
-    assert(warnings.some(w => w.includes('Dropped overlap with list: "CARD XUNG ĐỘT"')));
+    assert.deepStrictEqual(warnings, [
+      'Dropped overlap with list: "CARD XUNG ĐỘT"'
+    ], 'Must match exact baseline warnings array');
     console.log('✓ TEST 6 PASSED: list_group windows correctly computed and colliding cards dropped');
   } catch (err) {
     console.error('❌ TEST 6 FAILED:', err.message);
@@ -175,6 +181,9 @@ async function runTests() {
     const titles = out.map(c => c.title);
     assert(titles.includes('CARD CHẠM ĐẦU'), 'Boundary touching card (end == list.start) must NOT be dropped');
     assert(titles.includes('CARD CHẠM ĐUÔI'), 'Boundary touching card (start == list.end) must NOT be dropped');
+    assert.deepStrictEqual(warnings, [
+      'Hook overlap fix: "CARD CHẠM ĐẦU" shifted +1.8s'
+    ], 'Must match exact baseline warnings array');
     console.log('✓ TEST 7 PASSED: Boundary touching strictly respects < and > clash rules');
   } catch (err) {
     console.error('❌ TEST 7 FAILED:', err.message);
@@ -200,7 +209,9 @@ async function runTests() {
     const out = postProcessOverlays(input);
     assert.strictEqual(out[0].startTime, 4.8, 'Early card startTime must shift to 4.8');
     assert.strictEqual(out[0].endTime, 6.8, 'Early card endTime must shift by +3.8s to 6.8');
-    assert(warnings.some(w => w.includes('Hook overlap fix: "CARD SỚM" shifted +3.8s')), 'Must log exact shift warning');
+    assert.deepStrictEqual(warnings, [
+      'Hook overlap fix: "CARD SỚM" shifted +3.8s'
+    ], 'Must match exact baseline warnings array');
 
     assert.strictEqual(out[1].startTime, 4.8, 'Exact safeStart card must NOT shift');
     assert.strictEqual(out[1].endTime, 6.8);
@@ -228,6 +239,7 @@ async function runTests() {
     const out = postProcessOverlays(input);
     assert.strictEqual(out[0].startTime, 1.0, 'List item must NOT be hook-shifted');
     assert.strictEqual(out[0].endTime, 3.0);
+    assert.deepStrictEqual(warnings, [], 'No warnings expected for valid list item');
     console.log('✓ TEST 9 PASSED: List items are exempt from hook safe-start shift');
   } catch (err) {
     console.error('❌ TEST 9 FAILED:', err.message);
