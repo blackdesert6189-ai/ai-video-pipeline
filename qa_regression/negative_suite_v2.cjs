@@ -46,18 +46,27 @@ function validateAudioQA(filePath) {
   return true;
 }
 
+let tpTestPath = 'output/creatine.mp4';
+let tempTpCreated = false;
+if (!fs.existsSync(tpTestPath)) {
+  tpTestPath = path.resolve('qa_regression', 'test_clipping_tp.mp4');
+  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=3:size=320x240:rate=30 -filter_complex "sine=frequency=440:duration=3[base];[base]loudnorm=I=-14.0:TP=-2:LRA=7[norm];aevalsrc='1.5*sin(2*PI*500*t)':d=0.01[click];[click]adelay=1000|1000[dclick];[norm][dclick]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]" -map 0:v -map "[aout]" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${tpTestPath}"`, { stdio: 'ignore' });
+  tempTpCreated = true;
+}
+
 try {
-  // Test with original output/creatine.mp4 (True Peak was +1.25 dBTP)
-  validateAudioQA('output/creatine.mp4');
+  validateAudioQA(tpTestPath);
   console.error('❌ TEST 2 FAILED: Expected QA to reject True Peak > -1.0 dBTP, but it passed.');
   allPassed = false;
 } catch (err) {
   if (err.message && err.message.includes('CRITICAL AUDIO QA FAILED: Final True Peak') && err.message.includes('exceeds limit')) {
-    console.log(`✓ TEST 2 PASSED: Successfully rejected clipping True Peak (+1.25 dBTP): ${err.message}`);
+    console.log(`✓ TEST 2 PASSED: Successfully rejected clipping True Peak: ${err.message}`);
   } else {
     console.error(`❌ TEST 2 FAILED: Unexpected error: ${err.message}`);
     allPassed = false;
   }
+} finally {
+  if (tempTpCreated && fs.existsSync(tpTestPath)) fs.rmSync(tpTestPath, { force: true });
 }
 
 // ── TEST 3: Audio QA Loudness (LUFS) failure → FAIL-CLOSED ─────────────────

@@ -1,0 +1,161 @@
+name: Pipeline Regression Gates
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-and-characterization:
+    name: Unit & Characterization Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install system dependencies (FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Verify tool versions
+        run: |
+          echo "=== Node version ==="
+          node --version
+          echo "=== NPM version ==="
+          npm --version
+          echo "=== FFmpeg version ==="
+          ffmpeg -version | head -n 1
+          echo "=== FFprobe version ==="
+          ffprobe -version | head -n 1
+
+      - name: Run SRT module test
+        run: node qa_regression/test_srt_module.cjs
+
+      - name: Run CLI module test
+        run: node qa_regression/test_cli_module.cjs
+
+      - name: Run Cache ownership module test
+        run: node qa_regression/test_cache_module.cjs
+
+      - name: Run Report mode parity test
+        run: node qa_regression/test_report_mode_parity.cjs
+
+      - name: Run Batch mode parity test
+        run: node qa_regression/test_batch_mode_parity.cjs
+
+      - name: Run Media Probe module test
+        run: node qa_regression/test_media_probe.cjs
+
+      - name: Run Audio Planning module test
+        run: node qa_regression/test_audio_plan.cjs
+
+      - name: Run FFmpeg command parity test
+        run: node qa_regression/test_ffmpeg_command_parity.cjs
+
+      - name: Run Final Audio QA module test
+        run: node qa_regression/test_final_qa.cjs
+
+      - name: Run CLI fail-safe suite
+        run: node qa_regression/cli_failsafe_suite.cjs
+
+      - name: Run Negative and fail-closed suite
+        run: node qa_regression/negative_suite_v2.cjs
+
+  e2e-render:
+    name: E2E Pipeline Render & Audio QA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install system dependencies (FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Verify tool versions
+        run: |
+          node --version
+          npm --version
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Run E2E pipeline regression test
+        run: node qa_regression/pipeline_e2e_regression.cjs
+
+      - name: Upload E2E debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-artifacts
+          path: |
+            qa_regression/pipeline_e2e_fixture/
+            output/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  visual-regression:
+    name: Visual Preservation Regression
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install system dependencies (FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Verify tool versions
+        run: |
+          node --version
+          npm --version
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Run full visual regression test
+        run: node qa_regression/visual_regression_full.cjs
+
+      - name: Upload visual checkpoints on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-failure-artifacts
+          path: qa_regression/vis_checkpoints/
+          if-no-files-found: ignore
+          retention-days: 7
