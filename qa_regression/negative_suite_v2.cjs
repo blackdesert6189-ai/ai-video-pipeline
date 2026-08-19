@@ -50,7 +50,7 @@ let tpTestPath = 'output/creatine.mp4';
 let tempTpCreated = false;
 if (!fs.existsSync(tpTestPath)) {
   tpTestPath = path.resolve('qa_regression', 'test_clipping_tp.mp4');
-  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=3:size=320x240:rate=30 -filter_complex "sine=f=440:d=3,loudnorm=I=-14.2:TP=-2[bg];sine=f=1000:d=0.01,volume=10[click];[click]adelay=1000|1000[dclick];[bg][dclick]amix=inputs=2:duration=first:normalize=0[aout]" -map 0:v -map "[aout]" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${tpTestPath}"`, { stdio: 'ignore' });
+  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=5:size=320x240:rate=30 -filter_complex "sine=f=440:d=5,loudnorm=I=-16:TP=-3:LRA=7[base];sine=f=1000:d=0.15,volume=10[burst];[burst]adelay=2000|2000[dburst];[base][dburst]amix=inputs=2:duration=first:normalize=0[aout]" -map 0:v -map "[aout]" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${tpTestPath}"`, { stdio: 'ignore' });
   tempTpCreated = true;
 }
 
