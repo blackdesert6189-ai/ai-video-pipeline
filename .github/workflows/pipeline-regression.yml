@@ -79,6 +79,9 @@ jobs:
       - name: Run Runtime Visual Patches module test
         run: node qa_regression/test_runtime_visual_patches.cjs
 
+      - name: Run Video Filters module test
+        run: node qa_regression/test_video_filters.cjs
+
       - name: Run CLI fail-safe suite
         run: node qa_regression/cli_failsafe_suite.cjs
 
