@@ -26,10 +26,8 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install system dependencies (FFmpeg)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+      - name: Ensure FFmpeg is installed
+        run: which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
 
       - name: Install Node dependencies
         run: npm ci
@@ -91,10 +89,8 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install system dependencies (FFmpeg)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+      - name: Ensure FFmpeg is installed
+        run: which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
 
       - name: Install Node dependencies
         run: npm ci
@@ -133,10 +129,8 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install system dependencies (FFmpeg)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+      - name: Ensure FFmpeg is installed
+        run: which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
 
       - name: Install Node dependencies
         run: npm ci
