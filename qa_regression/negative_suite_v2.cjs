@@ -46,15 +46,9 @@ function validateAudioQA(filePath) {
   return true;
 }
 
-let tpTestPath = 'output/creatine.mp4';
-let tempTpCreated = false;
-if (!fs.existsSync(tpTestPath)) {
-  tpTestPath = path.resolve('qa_regression', 'test_clipping_tp.mp4');
-  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=5:size=320x240:rate=30 -filter_complex "sine=f=440:d=5,loudnorm=I=-16:TP=-3:LRA=7[base];sine=f=1000:d=0.15,volume=10[burst];[burst]adelay=2000|2000[dburst];[base][dburst]amix=inputs=2:duration=first:normalize=0[aout]" -map 0:v -map "[aout]" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${tpTestPath}"`, { stdio: 'ignore' });
-  tempTpCreated = true;
-}
-
+const tpTestPath = path.resolve('qa_regression', 'test_clipping_tp.mp4');
 try {
+  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=5:size=320x240:rate=30 -filter_complex "sine=f=440:d=5,loudnorm=I=-16:TP=-3:LRA=7[base];sine=f=1000:d=0.15,volume=10[burst];[burst]adelay=2000|2000[dburst];[base][dburst]amix=inputs=2:duration=first:normalize=0[aout]" -map 0:v -map "[aout]" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${tpTestPath}"`, { stdio: 'ignore' });
   validateAudioQA(tpTestPath);
   console.error('❌ TEST 2 FAILED: Expected QA to reject True Peak > -1.0 dBTP, but it passed.');
   allPassed = false;
@@ -66,7 +60,7 @@ try {
     allPassed = false;
   }
 } finally {
-  if (tempTpCreated && fs.existsSync(tpTestPath)) fs.rmSync(tpTestPath, { force: true });
+  if (fs.existsSync(tpTestPath)) fs.rmSync(tpTestPath, { force: true });
 }
 
 // ── TEST 3: Audio QA Loudness (LUFS) failure → FAIL-CLOSED ─────────────────

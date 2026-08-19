@@ -30,19 +30,16 @@ let allPassed = true;
 const results = [];
 
 for (const t of tests) {
-  const generatedFiles = [];
-  if (!fs.existsSync(t.beforeFile) || !fs.existsSync(t.afterFile)) {
-    console.log(`Generating self-contained test fixture for ${t.name}...`);
-    const maxTime = Math.ceil(Math.max(...t.timestamps.map(Number))) + 2;
-    fs.mkdirSync(path.dirname(t.beforeFile), { recursive: true });
-    if (!fs.existsSync(t.beforeFile)) {
-      execSync(`ffmpeg -y -f lavfi -i testsrc=duration=${maxTime}:size=320x240:rate=30 -f lavfi -i sine=frequency=440:duration=${maxTime} -c:v libx264 -c:a aac "${t.beforeFile}"`, { stdio: 'ignore' });
-      generatedFiles.push(t.beforeFile);
-    }
-    if (!fs.existsSync(t.afterFile)) {
-      execSync(`ffmpeg -y -i "${t.beforeFile}" -c:v copy -c:a aac "${t.afterFile}"`, { stdio: 'ignore' });
-      generatedFiles.push(t.afterFile);
-    }
+  console.log(`--- Testing: ${t.name} ---`);
+  if (!fs.existsSync(t.beforeFile)) {
+    console.error(`❌ FAILED: Baseline file not found: ${t.beforeFile}`);
+    allPassed = false;
+    continue;
+  }
+  if (!fs.existsSync(t.afterFile)) {
+    console.error(`❌ FAILED: Target file not found: ${t.afterFile}`);
+    allPassed = false;
+    continue;
   }
 
   for (const time of t.timestamps) {
@@ -96,10 +93,6 @@ for (const t of tests) {
       if (fs.existsSync(beforeImg)) fs.rmSync(beforeImg, { force: true });
       if (fs.existsSync(afterImg)) fs.rmSync(afterImg, { force: true });
     }
-  }
-
-  for (const f of generatedFiles) {
-    if (fs.existsSync(f)) fs.rmSync(f, { force: true });
   }
 }
 
