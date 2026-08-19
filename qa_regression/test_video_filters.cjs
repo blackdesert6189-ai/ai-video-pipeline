@@ -176,6 +176,28 @@ async function runTests() {
   }
 
   // -------------------------------------------------------------
+  // TEST 8: Missing colorGrade Dependency Semantics (Fail-Fast)
+  // -------------------------------------------------------------
+  try {
+    const missingFilters = createVideoFilters({ colorGrade: null });
+    assert.throws(
+      () => missingFilters.buildColorGradeFilter('[composited]', '[outv]'),
+      /Cannot read propert|TypeError/,
+      'buildColorGradeFilter with missing colorGrade must fail fast and NOT silently return a copy filter'
+    );
+    assert.throws(
+      () => missingFilters.buildBrollFilter([], 1, 1080, 1920, 30),
+      /Cannot read propert|TypeError/,
+      'buildBrollFilter with missing colorGrade must fail fast and NOT silently generate graph'
+    );
+
+    console.log('✓ TEST 8 PASSED: Missing colorGrade does not silently fallback to copy filter');
+  } catch (err) {
+    console.error('❌ TEST 8 FAILED:', err.message);
+    allPassed = false;
+  }
+
+  // -------------------------------------------------------------
   // FINAL SUITE RESULT
   // -------------------------------------------------------------
   console.log('\n=============================================================');

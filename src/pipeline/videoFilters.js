@@ -44,7 +44,7 @@ export function createVideoFilters({ colorGrade }) {
   // Builds FFmpeg eq filter chain for warm cinematic color grade
   // inLabel/outLabel e.g. '[composited]' → '[outv]'
   function buildColorGradeFilter(inLabel, outLabel) {
-    if (!cg || !cg.enabled) return `${inLabel}copy${outLabel}`;
+    if (!cg.enabled) return `${inLabel}copy${outLabel}`;
     const params = [
       `brightness=${cg.brightness.toFixed(3)}`,
       `contrast=${cg.contrast.toFixed(3)}`,
