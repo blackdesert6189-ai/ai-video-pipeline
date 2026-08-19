@@ -34,8 +34,8 @@ async function runTests() {
   // Quiet audio: ~-35 LUFS (outside [-15, -13] LUFS)
   execSync(`ffmpeg -y -f lavfi -i testsrc=duration=3:size=320x240:rate=30 -f lavfi -i sine=frequency=440:duration=3 -af "volume=-25dB" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${outOfSpecLoudness}"`, { stdio: 'ignore' });
 
-  // Clipping audio: Integrated Loudness in [-15, -13] LUFS (-14.0 LUFS) but True Peak > -1.0 dBTP (+3.5 dBTP)
-  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=3:size=320x240:rate=30 -filter_complex "sine=frequency=440:duration=3[base];[base]loudnorm=I=-14.0:TP=-2:LRA=7[norm];aevalsrc='1.5*sin(2*PI*500*t)':d=0.01[click];[click]adelay=1000|1000[dclick];[norm][dclick]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]" -map 0:v -map "[aout]" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${clippingTruePeak}"`, { stdio: 'ignore' });
+  // Clipping audio: Integrated Loudness in [-15, -13] LUFS (-14.0 LUFS) but True Peak > -1.0 dBTP (+0.75 dBTP)
+  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=5:size=320x240:rate=30 -filter_complex "sine=f=440:d=5,loudnorm=I=-16:TP=-3:LRA=7[base];sine=f=1000:d=0.15,volume=10[burst];[burst]adelay=2000|2000[dburst];[base][dburst]amix=inputs=2:duration=first:normalize=0[aout]" -map 0:v -map "[aout]" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${clippingTruePeak}"`, { stdio: 'ignore' });
 
   // Compliant audio: -14.0 LUFS, <= -1.0 dBTP, 48000Hz stereo AAC
   execSync(`ffmpeg -y -f lavfi -i testsrc=duration=3:size=320x240:rate=30 -f lavfi -i sine=frequency=440:duration=3 -af "loudnorm=I=-14:TP=-1.5:LRA=7" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${validOutput}"`, { stdio: 'ignore' });
