@@ -7,7 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import { logStep, logWarning } from './logger.js';
+import { logStep, logSuccess, logWarning } from './logger.js';
 
 // Audio mastering constants
 export const AUDIO_COMP_THRESHOLD   = -18;   // dB — voice compressor threshold
@@ -319,14 +319,16 @@ export function mixOverlaySfxIntoOutput(finalOutputPath, overlayEvents) {
   const mixCmd = `ffmpeg -y -i "${finalOutputPath}" ${sfxInputs} -filter_complex "${filterComplex}" -map 0:v -map "[aout]" -c:v copy -c:a aac -shortest "${tempOutputPath}"`;
 
   logStep(`Mixing ${validEvents.length} overlay SFX event(s) into final output...`);
+  console.log(`Running: ${mixCmd}\n`);
   try {
-    execSync(mixCmd, { stdio: "inherit" });
+    execSync(mixCmd, { stdio: 'inherit' });
     fs.copyFileSync(tempOutputPath, finalOutputPath);
-    fs.unlinkSync(tempOutputPath);
+    fs.rmSync(tempOutputPath, { force: true });
+    logSuccess("Overlay SFX mix complete.");
     return true;
-  } catch (err) {
-    logWarning(`SFX mixing failed — using original video audio: ${err.message}`);
-    if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+  } catch (e) {
+    logWarning(`Overlay SFX mix failed: ${e.message}`);
+    if (fs.existsSync(tempOutputPath)) fs.rmSync(tempOutputPath, { force: true });
     return false;
   }
 }

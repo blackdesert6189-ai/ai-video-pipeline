@@ -1,27 +1,28 @@
 /**
  * src/pipeline/finalQa.js
  * Strict Fail-Closed Post-Render Audio QA Validation.
- * Validates output existence, audio stream presence, AAC codec,
- * 48000 Hz, stereo channels, Integrated Loudness in [-15, -13] LUFS,
- * and True Peak <= -1.0 dBTP.
+ * Validates audio stream presence, AAC codec, stereo channels,
+ * 48000 Hz sample rate, Integrated Loudness in [-15, -13] LUFS,
+ * and True Peak <= -1.0 dBTP with exact baseline execution semantics.
  */
 
-import fs from 'fs';
+import { execSync } from 'child_process';
 import { logStep, logSuccess } from './logger.js';
-import { hasAudioStream, probeAudioStream, measureLoudnormStats } from './mediaProbe.js';
+import { hasAudioStream, measureLoudnormStats } from './mediaProbe.js';
 
 export function validatePostRenderAudioQA(outputPath) {
   logStep("Running Post-Render Audio QA Validation on final output...");
-
-  if (!fs.existsSync(outputPath)) {
-    throw new Error(`CRITICAL AUDIO QA FAILED: Output file not found at "${outputPath}"!`);
-  }
 
   if (!hasAudioStream(outputPath)) {
     throw new Error(`CRITICAL AUDIO QA FAILED: Output video "${outputPath}" has no audio stream!`);
   }
 
-  const aStream = probeAudioStream(outputPath);
+  const probeJson = execSync(
+    `ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,channels,sample_rate -of json "${outputPath}"`,
+    { encoding: 'utf8' }
+  );
+  const probeData = JSON.parse(probeJson);
+  const aStream = probeData.streams && probeData.streams[0];
   if (!aStream) {
     throw new Error(`CRITICAL AUDIO QA FAILED: No audio stream found by ffprobe in "${outputPath}"!`);
   }

@@ -21,14 +21,26 @@ async function runTests() {
   const mp3Audio = path.join(testDir, 'mp3_audio.mp4');
   const monoAudio = path.join(testDir, 'mono_audio.mp4');
   const rate44100 = path.join(testDir, 'rate_44100.mp4');
+  const outOfSpecLoudness = path.join(testDir, 'out_of_spec_loudness.mp4');
+  const clippingTruePeak = path.join(testDir, 'clipping_true_peak.mp4');
   const validOutput = path.join(testDir, 'valid_output.mp4');
 
-  // Generate test files
+  // Generate test fixtures
+  console.log('Generating test fixtures with FFmpeg...');
   execSync(`ffmpeg -y -f lavfi -i testsrc=duration=2:size=320x240:rate=30 -an -c:v libx264 "${noAudio}"`, { stdio: 'ignore' });
   execSync(`ffmpeg -y -f lavfi -i testsrc=duration=2:size=320x240:rate=30 -f lavfi -i sine=frequency=440:duration=2 -c:v libx264 -c:a mp3 "${mp3Audio}"`, { stdio: 'ignore' });
   execSync(`ffmpeg -y -f lavfi -i testsrc=duration=2:size=320x240:rate=30 -f lavfi -i sine=frequency=440:duration=2 -c:v libx264 -c:a aac -ac 1 -ar 48000 "${monoAudio}"`, { stdio: 'ignore' });
   execSync(`ffmpeg -y -f lavfi -i testsrc=duration=2:size=320x240:rate=30 -f lavfi -i sine=frequency=440:duration=2 -c:v libx264 -c:a aac -ac 2 -ar 44100 "${rate44100}"`, { stdio: 'ignore' });
+  // Quiet audio: ~-35 LUFS (outside [-15, -13] LUFS)
+  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=3:size=320x240:rate=30 -f lavfi -i sine=frequency=440:duration=3 -af "volume=-25dB" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${outOfSpecLoudness}"`, { stdio: 'ignore' });
+
+  // Clipping audio: Integrated Loudness in [-15, -13] LUFS (-14.0 LUFS) but True Peak > -1.0 dBTP (+3.5 dBTP)
+  execSync(`ffmpeg -y -f lavfi -i testsrc=duration=3:size=320x240:rate=30 -filter_complex "sine=frequency=440:duration=3[base];[base]loudnorm=I=-14.0:TP=-2:LRA=7[norm];aevalsrc='1.5*sin(2*PI*500*t)':d=0.01[click];[click]adelay=1000|1000[dclick];[norm][dclick]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]" -map 0:v -map "[aout]" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${clippingTruePeak}"`, { stdio: 'ignore' });
+
+  // Compliant audio: -14.0 LUFS, <= -1.0 dBTP, 48000Hz stereo AAC
   execSync(`ffmpeg -y -f lavfi -i testsrc=duration=3:size=320x240:rate=30 -f lavfi -i sine=frequency=440:duration=3 -af "loudnorm=I=-14:TP=-1.5:LRA=7" -c:v libx264 -c:a aac -ac 2 -ar 48000 "${validOutput}"`, { stdio: 'ignore' });
+
+  console.log('Running test assertions...\n');
 
   // 1. Missing file
   try {
@@ -36,10 +48,10 @@ async function runTests() {
     console.error('❌ TEST 1 FAILED: Expected missing file to throw.');
     allPassed = false;
   } catch (e) {
-    if (e.message.includes('Output file not found')) {
-      console.log('✓ TEST 1 PASSED: Missing output file cleanly rejected.');
+    if (e.message.includes('CRITICAL AUDIO QA FAILED') && e.message.includes('has no audio stream')) {
+      console.log('✓ TEST 1 PASSED: Missing output file triggers baseline audio stream failure.');
     } else {
-      console.error('❌ TEST 1 FAILED:', e.message);
+      console.error('❌ TEST 1 FAILED: Unexpected error message:', e.message);
       allPassed = false;
     }
   }
@@ -50,8 +62,8 @@ async function runTests() {
     console.error('❌ TEST 2 FAILED: Expected video without audio to throw.');
     allPassed = false;
   } catch (e) {
-    if (e.message.includes('has no audio stream')) {
-      console.log('✓ TEST 2 PASSED: Missing audio stream cleanly rejected.');
+    if (e.message.includes('CRITICAL AUDIO QA FAILED: Output video') && e.message.includes('has no audio stream!')) {
+      console.log('✓ TEST 2 PASSED: Video missing audio stream cleanly rejected.');
     } else {
       console.error('❌ TEST 2 FAILED:', e.message);
       allPassed = false;
@@ -64,7 +76,7 @@ async function runTests() {
     console.error('❌ TEST 3 FAILED: Expected non-AAC audio to throw.');
     allPassed = false;
   } catch (e) {
-    if (e.message.includes("Expected audio codec 'aac'")) {
+    if (e.message.includes("CRITICAL AUDIO QA FAILED: Expected audio codec 'aac'")) {
       console.log('✓ TEST 3 PASSED: Non-AAC audio codec cleanly rejected.');
     } else {
       console.error('❌ TEST 3 FAILED:', e.message);
@@ -78,7 +90,7 @@ async function runTests() {
     console.error('❌ TEST 4 FAILED: Expected mono audio to throw.');
     allPassed = false;
   } catch (e) {
-    if (e.message.includes('Expected 2 channels (stereo)')) {
+    if (e.message.includes('CRITICAL AUDIO QA FAILED: Expected 2 channels (stereo)')) {
       console.log('✓ TEST 4 PASSED: Mono audio stream cleanly rejected.');
     } else {
       console.error('❌ TEST 4 FAILED:', e.message);
@@ -92,7 +104,7 @@ async function runTests() {
     console.error('❌ TEST 5 FAILED: Expected 44100 Hz audio to throw.');
     allPassed = false;
   } catch (e) {
-    if (e.message.includes('Expected 48000 Hz sample rate')) {
+    if (e.message.includes('CRITICAL AUDIO QA FAILED: Expected 48000 Hz sample rate')) {
       console.log('✓ TEST 5 PASSED: Non-48000Hz sample rate cleanly rejected.');
     } else {
       console.error('❌ TEST 5 FAILED:', e.message);
@@ -100,17 +112,45 @@ async function runTests() {
     }
   }
 
-  // 6. Valid compliant output
+  // 6. Integrated Loudness outside [-15.0, -13.0] LUFS
+  try {
+    validatePostRenderAudioQA(outOfSpecLoudness);
+    console.error('❌ TEST 6 FAILED: Expected out-of-spec loudness to throw.');
+    allPassed = false;
+  } catch (e) {
+    if (e.message.includes('CRITICAL AUDIO QA FAILED: Final Integrated Loudness') && e.message.includes('is outside acceptable tolerance [-15.0, -13.0] LUFS!')) {
+      console.log('✓ TEST 6 PASSED: Out-of-spec Integrated Loudness rejected cleanly (no false SUCCESS).');
+    } else {
+      console.error('❌ TEST 6 FAILED:', e.message);
+      allPassed = false;
+    }
+  }
+
+  // 7. True Peak > -1.0 dBTP
+  try {
+    validatePostRenderAudioQA(clippingTruePeak);
+    console.error('❌ TEST 7 FAILED: Expected clipping True Peak to throw.');
+    allPassed = false;
+  } catch (e) {
+    if (e.message.includes('CRITICAL AUDIO QA FAILED: Final True Peak') && e.message.includes('exceeds limit (-1.0 dBTP)!')) {
+      console.log('✓ TEST 7 PASSED: True Peak exceeding -1.0 dBTP rejected cleanly (no false SUCCESS).');
+    } else {
+      console.error('❌ TEST 7 FAILED:', e.message);
+      allPassed = false;
+    }
+  }
+
+  // 8. Fully Compliant Audio
   try {
     const res = validatePostRenderAudioQA(validOutput);
-    if (res.passed && res.codec === 'aac' && res.channels === 2 && res.sampleRate === 48000) {
-      console.log(`✓ TEST 6 PASSED: Fully compliant video successfully passes Audio QA (LUFS=${res.lufs}, TP=${res.truePeak}).`);
+    if (res.passed && res.codec === 'aac' && res.channels === 2 && res.sampleRate === 48000 && res.lufs >= -15.0 && res.lufs <= -13.0 && res.truePeak <= -1.0) {
+      console.log(`✓ TEST 8 PASSED: Fully compliant video passes Audio QA (LUFS=${res.lufs}, TP=${res.truePeak}).`);
     } else {
-      console.error('❌ TEST 6 FAILED:', res);
+      console.error('❌ TEST 8 FAILED: Compliant output did not pass:', res);
       allPassed = false;
     }
   } catch (e) {
-    console.error('❌ TEST 6 FAILED:', e.message);
+    console.error('❌ TEST 8 FAILED:', e.message);
     allPassed = false;
   }
 
@@ -119,7 +159,7 @@ async function runTests() {
 
   console.log('\n==================================================================');
   if (allPassed) {
-    console.log('✓ ALL FINAL QA MODULE TESTS PASSED 100%!');
+    console.log('✓ ALL 8 FINAL QA MODULE TESTS PASSED 100%!');
     process.exit(0);
   } else {
     console.error('❌ FINAL QA MODULE TESTS FAILED.');
