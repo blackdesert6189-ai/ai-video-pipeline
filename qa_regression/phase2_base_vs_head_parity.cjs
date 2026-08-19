@@ -128,6 +128,7 @@ Chụp ảnh bữa ăn bằng camera AI.
   if (baseV.codec_name !== headV.codec_name ||
       baseV.width !== headV.width ||
       baseV.height !== headV.height ||
+      baseV.r_frame_rate !== headV.r_frame_rate ||
       baseA.codec_name !== headA.codec_name ||
       baseA.sample_rate !== headA.sample_rate ||
       baseA.channels !== headA.channels) {
@@ -137,10 +138,10 @@ Chụp ảnh bữa ăn bằng camera AI.
     console.log('✓ Metadata MATCH between BASE and HEAD 100%.');
   }
 
-  // 8. Decoded Video Frame Parity (framemd5)
+  // 8. Decoded Video Frame Parity (framemd5 - video only)
   console.log('\n--- DECODED VIDEO PARITY (framemd5) ---');
-  const baseFrameMd5 = execSync(`ffmpeg -v error -i "${baseMp4}" -f framemd5 -`, { encoding: 'utf8' });
-  const headFrameMd5 = execSync(`ffmpeg -v error -i "${headMp4}" -f framemd5 -`, { encoding: 'utf8' });
+  const baseFrameMd5 = execSync(`ffmpeg -v error -i "${baseMp4}" -map 0:v:0 -an -f framemd5 -`, { encoding: 'utf8' });
+  const headFrameMd5 = execSync(`ffmpeg -v error -i "${headMp4}" -map 0:v:0 -an -f framemd5 -`, { encoding: 'utf8' });
 
   if (baseFrameMd5 === headFrameMd5) {
     console.log('✓ Decoded Video: 100% BIT-FOR-BIT IDENTICAL (framemd5 match).');
@@ -178,7 +179,8 @@ Chụp ảnh bữa ăn bằng camera AI.
   if (basePcmHash === headPcmHash) {
     console.log('✓ Decoded Audio PCM: 100% BIT-FOR-BIT IDENTICAL (SHA256 match).');
   } else {
-    console.log(`ℹ Note: Audio PCM hashes differ (${basePcmHash.slice(0, 8)} vs ${headPcmHash.slice(0, 8)}) but loudness and True Peak match identically.`);
+    console.error(`❌ Decoded Audio PCM mismatch! Base=${basePcmHash} Head=${headPcmHash}`);
+    allPassed = false;
   }
 
 } catch (err) {
