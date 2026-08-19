@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -16,18 +19,21 @@ jobs:
   unit-and-characterization:
     name: Unit & Characterization Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20.x
+      - name: Setup Node.js 22.x
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22.12.0'
           cache: 'npm'
 
       - name: Setup FFmpeg
-        uses: federicocarboni/setup-ffmpeg@v3
+        uses: federicocarboni/setup-ffmpeg@36c6454b5a2348e7794ba2d82a21506605921e3d # v3
+        with:
+          ffmpeg-version: '7.0.2'
 
       - name: Install Node dependencies
         run: npm ci
@@ -79,18 +85,21 @@ jobs:
   e2e-render:
     name: E2E Pipeline Render & Audio QA
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20.x
+      - name: Setup Node.js 22.x
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22.12.0'
           cache: 'npm'
 
       - name: Setup FFmpeg
-        uses: federicocarboni/setup-ffmpeg@v3
+        uses: federicocarboni/setup-ffmpeg@36c6454b5a2348e7794ba2d82a21506605921e3d # v3
+        with:
+          ffmpeg-version: '7.0.2'
 
       - name: Install Node dependencies
         run: npm ci
