@@ -100,6 +100,9 @@ jobs:
       - name: Run Normalization module test
         run: node qa_regression/test_normalization.cjs
 
+      - name: Run Asset Acquisition module test
+        run: node qa_regression/test_asset_acquisition.cjs
+
       - name: Run CLI fail-safe suite
         run: node qa_regression/cli_failsafe_suite.cjs
 
