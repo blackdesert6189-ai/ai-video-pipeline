@@ -89,6 +89,7 @@ import { applyRuntimeVisualPatches } from './src/pipeline/runtimeVisualPatches.j
 import { createVideoFilters } from './src/pipeline/videoFilters.js';
 import { createOverlayPostProcessor } from './src/pipeline/overlayPostProcessor.js';
 import { createSubtitleSplitter } from './src/pipeline/subtitleSplit.js';
+import { createPeakSmartIndent } from './src/pipeline/peakSmartIndent.js';
 
 // ── Windows: force UTF-8 console output (fix UnicodeEncodeError for ✓ ✗ ⚠) ──
 if (process.platform === 'win32') {
@@ -3160,79 +3161,12 @@ const {
   warn: console.warn
 });
 
-/**
- * getPeakSmartIndents — tính padding-left cho từng chunk trong 3-line peak cascade.
- *
- * Rule (scalable, no hardcode):
- *   • Line 1 (anchor)        → indent = 0
- *   • Line 2 (regular/conn.) → indent = peakSmartFirstCharWidth   (≈ width ký tự đầu anchor)
- *   • Line 3 (script_climax) → indent = line2Start + ước tính độ dài line 2
- *                              (bị cap nếu text line 3 sẽ overflow container)
- *   • Line 4+                → fallback về peakIndentStep × lineIdx
- *
- * Trả về null nếu điều kiện không thoả (2-chunk, anchor không đứng đầu, không có script_climax)
- * → caller dùng fallback lineIdx × peakIndentStep bình thường.
- */
-function getPeakSmartIndents(chunks) {
-  const LP = LAYOUT.peak;
-  const LS = LAYOUT.subtitle;
-  if (!LP.peakSmartIndentEnabled)            return null; // feature flag
-  if (chunks[0].type !== 'anchor')           return null; // anchor phải đứng đầu
-  if (chunks[chunks.length - 1].type !== 'script_climax') return null; // phải kết bằng script_climax
-
-  const firstCharW = LS.peakSmartFirstCharWidth; // = Math.round(anchorSize × 0.50)
-
-  // ── 2-chunk shortcut: anchor + script_climax ──────────────────────────────────────────────
-  // Line 2 bắt đầu sau ký tự đầu tiên của anchor → tạo staircase dù chỉ 2 dòng
-  if (chunks.length === 2) {
-    return {
-      indents: [0, firstCharW],
-      climaxExtraTopPull: 0,
-    };
-  }
-
-  // ── Ước tính độ rộng line 2 ──────────────────────────────────────────────────────────────
-  const midChunk  = chunks[1];
-  const midWords  = midChunk.text.trim().split(/\s+/).filter(Boolean);
-  const midFontSz = ({
-    connector:    LS.peakConnectorSize,
-    regular:      LS.peakRegularSize,
-    anchor:       LS.peakAnchorSize,
-    script:       LS.peakScriptSize,
-    script_climax: LS.peakScriptClimaxSize,
-  })[midChunk.type] ?? LS.peakRegularSize;
-  const midEstW = Math.round(
-    midWords.length * midFontSz * LP.peakSmartRegCharRatio * LP.peakSmartAvgWordChars
-  );
-
-  // ── Ước tính độ rộng line 3 (DVN Grandy cursive) — để safety-cap ────────────────────────
-  const scChunk = chunks[2];
-  const scWords = scChunk.text.trim().split(/\s+/).filter(Boolean);
-  const scEstW  = Math.round(
-    scWords.length * LS.peakScriptClimaxSize * LP.peakSmartScriptCharRatio * LP.peakSmartAvgWordChars
-  );
-
-  // Indent line 3 = firstCharW + ước tính độ rộng line 2
-  // Cap: đảm bảo line 3 không overflow container (margin trái 20px)
-  const rawLine3Indent = firstCharW + midEstW;
-  const maxSafeIndent  = Math.max(LS.width - scEstW - 20, firstCharW);
-  const line3Indent    = Math.min(rawLine3Indent, maxSafeIndent);
-
-  // Pull-up tỷ lệ với font size của line 2 (KHÔNG hardcode px cố định)
-  // Lý do: khoảng trắng tạo ra bởi line 2 tỷ lệ với font-size của nó
-  // → giảm gap cũng phải tỷ lệ với chính font-size đó mới scale đúng
-  const climaxExtraTopPull = Math.round(midFontSz * LP.peakSmartClimaxTopPullRatio);
-
-  return {
-    indents: chunks.map((_, i) => {
-      if (i === 0) return 0;
-      if (i === 1) return firstCharW;
-      if (i === 2) return line3Indent;
-      return i * LS.peakIndentStep; // 4+ chunk: fallback bình thường
-    }),
-    climaxExtraTopPull,
-  };
-}
+const {
+  getPeakSmartIndents
+} = createPeakSmartIndent({
+  layoutPeak: LAYOUT.peak,
+  layoutSubtitle: LAYOUT.subtitle
+});
 
 // ── Từ hư tiếng Việt (folded/ASCII form) — dùng trong TYB per-word sizing ──────
 // Chứa dạng foldText() của các từ hư (function words) phổ biến
