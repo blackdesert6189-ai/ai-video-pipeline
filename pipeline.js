@@ -90,6 +90,7 @@ import { createVideoFilters } from './src/pipeline/videoFilters.js';
 import { createOverlayPostProcessor } from './src/pipeline/overlayPostProcessor.js';
 import { createSubtitleSplitter } from './src/pipeline/subtitleSplit.js';
 import { createPeakSmartIndent } from './src/pipeline/peakSmartIndent.js';
+import { getLottieIconFilter } from './src/pipeline/lottieFilter.js';
 
 // ── Windows: force UTF-8 console output (fix UnicodeEncodeError for ✓ ✗ ⚠) ──
 if (process.platform === 'win32') {
@@ -3221,56 +3222,6 @@ function generatePremiumHTML(sentences, overlays, totalDuration, geminiHook = nu
     return !peakWindows.some(p => cStart < p.end && cEnd > p.start);
   });
   const fmt = (value) => Number(toSeconds(value, 0)).toFixed(3);
-
-  // ── Lottie icon brightness analysis (server-side, runs once per card) ─────────
-  // Scan tất cả fill/stroke color trong JSON → tính average luminance
-  // Mục đích: tự động detect icon tối → apply brightness boost để hiển thị rõ trên nền tối
-  function analyzeLottieAvgBrightness(animData) {
-    const vals = [];
-    function fromShape(s) {
-      if (!s) return;
-      if ((s.ty === 'fl' || s.ty === 'st') && s.c && s.c.k !== undefined) {
-        const k = s.c.k;
-        if (Array.isArray(k) && typeof k[0] === 'number' && k.length >= 3) {
-          vals.push(0.299 * k[0] + 0.587 * k[1] + 0.114 * k[2]);
-        } else if (Array.isArray(k)) {
-          k.forEach(kf => {
-            if (kf.s && typeof kf.s[0] === 'number')
-              vals.push(0.299 * kf.s[0] + 0.587 * kf.s[1] + 0.114 * kf.s[2]);
-          });
-        }
-      }
-      if (s.it) s.it.forEach(fromShape);
-    }
-    function fromLayer(layer) {
-      if (!layer) return;
-      if (layer.ty === 1) return; // solid bg layer — skip
-      const nm = (layer.nm || '').toLowerCase().trim();
-      if (nm === 'bg' || nm === 'bkg' || nm === 'background' || nm === 'backdrop') return;
-      if (layer.shapes) layer.shapes.forEach(fromShape);
-      if (layer.layers) layer.layers.forEach(fromLayer);
-    }
-    if (animData && animData.layers) animData.layers.forEach(fromLayer);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0.5;
-  }
-
-  // Tính CSS filter string cho icon — bake vào inline style của div (1 lần, server-side)
-  // Quy tắc brightness theo avg luminance của fills:
-  //   < 0.20 → near-black (đen, navy đậm)  → brightness(4.5) contrast(0.85)
-  //   < 0.40 → dark (xám đậm, màu tối)     → brightness(2.5)
-  //   < 0.55 → muted (xám nhạt, trung tính) → brightness(1.6)
-  //   ≥ 0.55 → bright/colorful              → giữ nguyên màu gốc
-  // Glow CNFI lime/red vẫn được giữ cho mọi loại icon
-  function getLottieIconFilter(animData, isWarn) {
-    const avg = analyzeLottieAvgBrightness(animData);
-    const glow = isWarn
-      ? 'drop-shadow(0 0 14px rgba(255,68,68,0.88)) drop-shadow(0 4px 12px rgba(0,0,0,0.55))'
-      : 'drop-shadow(0 0 20px rgba(166,255,61,0.88)) drop-shadow(0 4px 12px rgba(0,0,0,0.6))';
-    if (avg < 0.20) return `brightness(4.5) contrast(0.85) ${glow}`;
-    if (avg < 0.40) return `brightness(2.5) ${glow}`;
-    if (avg < 0.55) return `brightness(1.6) ${glow}`;
-    return glow;
-  }
 
   // Build inline Lottie data map — keyed by cardId ("card-0", "card-1", ...)
   // Each entry is the parsed JSON or null if no lottie_path
