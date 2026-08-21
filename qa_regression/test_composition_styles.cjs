@@ -7,12 +7,13 @@
  * 3. Exact font embedding (base64 data URI when font file exists, url path fallback when absent)
  * 4. CSS variables & layout property interpolation (:root vars, card positions, subtitle sizes)
  * 5. Metric & Pattern CSS inclusion and ordering
- * 6. Full character-for-character equality against Phase 14 baseline stylesheet
+ * 6. Full character-for-character equality against Phase 14 baseline stylesheet & SHA256 checksum
  */
 
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 const { pathToFileURL } = require('url');
 
@@ -22,6 +23,9 @@ async function runCompositionStylesCharacterizationTests() {
   console.log('==================================================================\n');
 
   const BASE_SHA = '50752889f1e034d5eb0b594fe5ad87fec65f691f';
+  const EXPECTED_STYLESHEET_LENGTH = 317827;
+  const EXPECTED_STYLESHEET_SHA256 = '630a29ee7ae5eefb6b85bfd6eaf2ec07f30611018aab0df108df7a2741d7f6e9';
+
   const modPath = path.resolve('src', 'pipeline', 'compositionStyles.js');
   const mod = await import(pathToFileURL(modPath).href);
   const { createCompositionStyles } = mod;
@@ -172,22 +176,47 @@ async function runCompositionStylesCharacterizationTests() {
   console.log('✓ Section 5 Passed: Metric & pattern CSS ordering locked.\n');
 
   // -------------------------------------------------------------
-  // 6. CHARACTER-FOR-CHARACTER FULL STYLESHEET EQUALITY (BASE VS HEAD)
+  // 6. CHARACTER-FOR-CHARACTER FULL STYLESHEET EQUALITY & CHECKSUM
   // -------------------------------------------------------------
-  console.log('--- 6. Full Character-for-Character Stylesheet Equality against Baseline ---');
+  console.log('--- 6. Full Character-for-Character Stylesheet Equality & Checksum ---');
   {
-    // Extract baseline stylesheet generation from Base SHA
-    const basePipelineCode = execSync(`git show ${BASE_SHA}:pipeline.js`, { encoding: 'utf8' });
-    const baseLines = basePipelineCode.split('\n');
+    const prodSvc = createCompositionStyles({
+      getMetricCSSImpl: getMetricCSS,
+      getPatternCSSImpl: getPatternCSS,
+      readFileSyncImpl: fs.readFileSync,
+      resolvePathImpl: path.resolve,
+      existsSyncImpl: fs.existsSync
+    });
 
-    // In Base SHA pipeline.js, find the exact font and style lines
-    const baseFontStart = baseLines.findIndex(l => l.includes('// Embed DVN Grandy as base64'));
-    const baseStyleStart = baseLines.findIndex((l, i) => i > baseFontStart && l.includes('<!-- DVN Grandy'));
-    const baseStyleEnd = baseLines.findIndex((l, i) => i > baseStyleStart && l.includes('    </style>') && baseLines[i + 1] && baseLines[i + 1].includes('  </head>'));
+    const actualExtractedStyles = prodSvc.generateStyles(layout);
+    const actualSha256 = crypto.createHash('sha256').update(actualExtractedStyles).digest('hex');
 
-    // Write a temporary runner to evaluate the exact baseline code
-    const tempEvalScript = path.resolve('temp_eval_baseline_styles.js');
-    const scriptContent = `
+    assert.strictEqual(
+      actualExtractedStyles.length,
+      EXPECTED_STYLESHEET_LENGTH,
+      `Length mismatch: actual=${actualExtractedStyles.length}, expected=${EXPECTED_STYLESHEET_LENGTH}`
+    );
+
+    assert.strictEqual(
+      actualSha256,
+      EXPECTED_STYLESHEET_SHA256,
+      `SHA256 checksum mismatch: actual=${actualSha256}, expected=${EXPECTED_STYLESHEET_SHA256}`
+    );
+
+    // If git object database has Base SHA, also do live character-for-character comparison against Base
+    let basePipelineCode = null;
+    try {
+      basePipelineCode = execSync(`git show ${BASE_SHA}:pipeline.js`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+    } catch {}
+
+    if (basePipelineCode) {
+      const baseLines = basePipelineCode.split('\n');
+      const baseFontStart = baseLines.findIndex(l => l.includes('// Embed DVN Grandy as base64'));
+      const baseStyleStart = baseLines.findIndex((l, i) => i > baseFontStart && l.includes('<!-- DVN Grandy'));
+      const baseStyleEnd = baseLines.findIndex((l, i) => i > baseStyleStart && l.includes('    </style>') && baseLines[i + 1] && baseLines[i + 1].includes('  </head>'));
+
+      const tempEvalScript = path.resolve('temp_eval_baseline_styles.js');
+      const scriptContent = `
 import fs from 'fs';
 import path from 'path';
 import { createLayout } from './src/pipeline/layout.js';
@@ -207,38 +236,21 @@ const _dvnFontSrc  = _dvnFontB64
 const baseStyles = \`${baseLines.slice(baseStyleStart, baseStyleEnd + 1).join('\n')}\`;
 process.stdout.write(baseStyles);
 `;
-
-    fs.writeFileSync(tempEvalScript, scriptContent, 'utf8');
-    let expectedBaselineStyles;
-    try {
-      expectedBaselineStyles = execSync(`node "${tempEvalScript}"`, { encoding: 'utf8' });
-    } finally {
-      try { fs.unlinkSync(tempEvalScript); } catch {}
+      fs.writeFileSync(tempEvalScript, scriptContent, 'utf8');
+      try {
+        const expectedBaselineStyles = execSync(`node "${tempEvalScript}"`, { encoding: 'utf8' });
+        assert.strictEqual(
+          actualExtractedStyles,
+          expectedBaselineStyles,
+          'Extracted composition styles must match baseline character-for-character with ZERO deviation!'
+        );
+      } finally {
+        try { fs.unlinkSync(tempEvalScript); } catch {}
+      }
     }
 
-    const prodSvc = createCompositionStyles({
-      getMetricCSSImpl: getMetricCSS,
-      getPatternCSSImpl: getPatternCSS,
-      readFileSyncImpl: fs.readFileSync,
-      resolvePathImpl: path.resolve,
-      existsSyncImpl: fs.existsSync
-    });
-
-    const actualExtractedStyles = prodSvc.generateStyles(layout);
-
-    assert.strictEqual(
-      actualExtractedStyles.length,
-      expectedBaselineStyles.length,
-      `Length mismatch: actual=${actualExtractedStyles.length}, expected=${expectedBaselineStyles.length}`
-    );
-
-    assert.strictEqual(
-      actualExtractedStyles,
-      expectedBaselineStyles,
-      'Extracted composition styles must match baseline character-for-character with ZERO deviation!'
-    );
-
     console.log(`✓ Character count: ${actualExtractedStyles.length} characters matched 100% identically.`);
+    console.log(`✓ Stylesheet SHA256: ${actualSha256} locked.`);
   }
   console.log('✓ Section 6 Passed: Character-for-character stylesheet equality locked.\n');
 
