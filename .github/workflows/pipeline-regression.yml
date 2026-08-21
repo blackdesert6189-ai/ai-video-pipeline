@@ -103,6 +103,9 @@ jobs:
       - name: Run Asset Acquisition module test
         run: node qa_regression/test_asset_acquisition.cjs
 
+      - name: Run Presenter Layout module test
+        run: node qa_regression/test_presenter_layout.cjs
+
       - name: Run CLI fail-safe suite
         run: node qa_regression/cli_failsafe_suite.cjs
 
