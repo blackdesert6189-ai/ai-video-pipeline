@@ -112,6 +112,9 @@ jobs:
       - name: Run Composition Styles module test
         run: node qa_regression/test_composition_styles.cjs
 
+      - name: Run HTML Composition module test
+        run: node qa_regression/test_html_composition.cjs
+
       - name: Run CLI fail-safe suite
         run: node qa_regression/cli_failsafe_suite.cjs
 
