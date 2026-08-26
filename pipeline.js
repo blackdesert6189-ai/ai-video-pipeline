@@ -26,57 +26,19 @@ import { getPatternCSS } from './visualPatternRenderer.js';
 import {
   COLOR_RESET,
   COLOR_GREEN,
-  COLOR_RED,
-  COLOR_YELLOW,
   COLOR_CYAN,
-  COLOR_MAGENTA,
   logStep,
   logSuccess,
   logWarning,
   logError
 } from './src/pipeline/logger.js';
 import { parseArgs } from './src/pipeline/cli.js';
-import { parseSRT, timeToSeconds } from './src/pipeline/srt.js';
+import { parseSRT } from './src/pipeline/srt.js';
 import { loadOwnedCache, saveOwnedCache } from './src/pipeline/cache.js';
-import { hasAudioStream, probeAudioStream, measureLoudnormStats } from './src/pipeline/mediaProbe.js';
+import { hasAudioStream } from './src/pipeline/mediaProbe.js';
 import {
-  AUDIO_COMP_THRESHOLD,
-  AUDIO_COMP_RATIO,
-  AUDIO_COMP_ATTACK_MS,
-  AUDIO_COMP_RELEASE_MS,
-  AUDIO_LUFS_TARGET,
-  AUDIO_TRUE_PEAK_DB,
-  AUDIO_LRA,
-  AUDIO_HIGHPASS_HZ,
-  AUDIO_DENOISE_FLOOR,
-  AUDIO_GATE_THRESHOLD,
-  AUDIO_GATE_ATTACK_MS,
-  AUDIO_GATE_RELEASE_MS,
-  AUDIO_EQ_MUD_HZ,
-  AUDIO_EQ_MUD_GAIN,
-  AUDIO_EQ_DESS_HZ,
-  AUDIO_EQ_DESS_GAIN,
-  AUDIO_EQ_PRESENCE_HZ,
-  AUDIO_EQ_PRESENCE_GAIN,
-  AUDIO_EQ_AIR_HZ,
-  AUDIO_EQ_AIR_GAIN,
-  SFX_VOLUME_DB,
-  HOOK_SFX_VOLUME_DB,
-  BROLL_SFX_VOLUME_DB,
-  SFX_POOL_SIZE,
-  CARD_SFX_CATEGORY_PREFERENCES,
-  SFX_CATEGORY_KEYWORDS,
-  normalizeSfxFileName,
-  classifySfxFile,
-  discoverSfxFiles,
-  scoreSfxForCardType,
-  buildSfxPoolByCardType,
-  buildSfxMapByCardType,
-  buildVoiceProcessingChain,
   buildAudioPlan,
-  measureMixedAudioLoudnorm,
-  mixOverlaySfxIntoOutput,
-  sfxTempOutputPath
+  measureMixedAudioLoudnorm
 } from './src/pipeline/audio.js';
 import {
   buildAudioFilterGraph,
